@@ -10,4 +10,5 @@ shift || true
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONPATH="${REPO_ROOT}/src:${PYTHONPATH:-}"
 
-python "${REPO_ROOT}/scripts/preprocess.py" --config "${CONFIG}" "$@"
+PYTHON="${PYTHON:-python}"
+"${PYTHON}" "${REPO_ROOT}/scripts/preprocess.py" --config "${CONFIG}" "$@"

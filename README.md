@@ -179,6 +179,9 @@ uploaded to the run. Pass `--no_wandb` (or `wandb.enabled: false`) to disable.
 - The env is assumed to contain all runtime libraries; no dependency install is
   required, but `pip install -e .` is the cleanest way to expose the `barca`
   package.
+- If the training interpreter is not the default `python`, point the launch
+  scripts at it with `PYTHON=/path/to/python` (the GPU server uses
+  `/opt/miniconda3/bin/python`).
 - Set `model.attn_implementation` to `flash_attention_2` only if flash-attn is
   installed; otherwise use `sdpa` or `null`.
 - Cross-node/multi-GPU launches use `torchrun` (see `scripts/train.sh`).

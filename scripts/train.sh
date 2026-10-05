@@ -6,6 +6,8 @@
 #   NUM_GPUS=4 ./scripts/train.sh configs/qlora.yaml
 #
 # Assumes the Python environment already provides torch/transformers/etc.
+# Override the interpreter with PYTHON, e.g.:
+#   PYTHON=/opt/miniconda3/bin/python ./scripts/train.sh configs/lora.yaml
 set -euo pipefail
 
 CONFIG="${1:-configs/lora.yaml}"
@@ -15,10 +17,11 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONPATH="${REPO_ROOT}/src:${PYTHONPATH:-}"
 export TOKENIZERS_PARALLELISM=false
 
+PYTHON="${PYTHON:-python}"
 NUM_GPUS="${NUM_GPUS:-1}"
 
 if [[ "${NUM_GPUS}" -gt 1 ]]; then
   torchrun --nproc_per_node="${NUM_GPUS}" -m barca.train --config "${CONFIG}" "$@"
 else
-  python -m barca.train --config "${CONFIG}" "$@"
+  "${PYTHON}" -m barca.train --config "${CONFIG}" "$@"
 fi
