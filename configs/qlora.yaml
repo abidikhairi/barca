@@ -9,13 +9,14 @@ run:
   description: 4-bit QLoRA fine-tuning on protein sequences.
 
 data:
-  path: /data/proteins/processed
+  path: /home/kabidi/workspace/datasets/uniref50/barca
   train_split: train
-  eval_split: validation
+  eval_split: valid
   text_column: sequence
   max_seq_length: 1024
-  packing: true
+  packing: false
   packing_add_eos: true
+  tokenized: true
   eval_fraction: 0.0
   num_proc: 8
 

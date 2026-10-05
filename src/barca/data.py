@@ -1,20 +1,24 @@
 """Dataset loading and transformation for causal-LM protein training.
 
-The expected input is a dataset saved with ``datasets.Dataset.save_to_disk`` and
-therefore loadable with ``datasets.load_from_disk``. It can be either:
+Two dataset layouts are supported, both loadable via ``datasets.load_from_disk``:
 
-* a ``DatasetDict`` with named splits (``data.train_split`` / ``data.eval_split``), or
-* a single ``Dataset`` that is split in-memory using ``data.eval_fraction`` /
-  ``data.test_fraction``.
+A. **Single root** — one directory holding either a ``DatasetDict`` (named
+   splits) or a single ``Dataset`` that is split in memory using
+   ``data.eval_fraction`` / ``data.test_fraction``.
 
-Sequences are tokenized for a decoder-only (causal LM) objective. With
-``data.packing`` the token stream is concatenated and chunked into fixed
-``max_seq_length`` blocks for maximum throughput.
+B. **Split root** — a directory containing one ``save_to_disk`` subdirectory
+   per split, e.g. ``/datasets/uniref50/barca/{train,valid}``. Split directory
+   names come from ``data.train_split`` / ``data.eval_split`` / ``data.test_split``.
+
+The pipeline is also aware of **pre-tokenized / pre-packed** datasets: if a
+split already provides ``input_ids`` (and ``attention_mask``), tokenization and
+packing are skipped automatically (`data.tokenized` can force this on/off).
 """
 
 from __future__ import annotations
 
 import itertools
+from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from datasets import Dataset, DatasetDict, load_from_disk
@@ -23,61 +27,110 @@ from .config import Config
 from .utils import LOGGER, is_main_process
 
 
-# --------------------------------------------------------------------------- #
-# Splitting
-# --------------------------------------------------------------------------- #
-def resolve_splits(cfg: Config) -> Tuple[Dataset, Optional[Dataset], Optional[Dataset]]:
-    """Return ``(train, eval, test)`` datasets from the configured source.
+# Columns a causal-LM dataset needs after (optional) tokenization.
+MODEL_INPUT_COLUMNS = ("input_ids", "attention_mask")
 
-    Handles both ``DatasetDict`` inputs and a single ``Dataset`` that must be
-    split using the fractions in ``cfg.data``.
-    """
-    source = load_from_disk(cfg.data.path)
+
+# --------------------------------------------------------------------------- #
+# Loading
+# --------------------------------------------------------------------------- #
+def _requested_splits(cfg: Config) -> Dict[str, str]:
+    """Map roles (train/eval/test) to split directory/split names."""
+    requested = {"train": cfg.data.train_split}
+    if cfg.data.eval_split:
+        requested["eval"] = cfg.data.eval_split
+    if cfg.data.test_split:
+        requested["test"] = cfg.data.test_split
+    return requested
+
+
+def is_tokenized(dataset: Dataset) -> bool:
+    """True if the dataset already carries model inputs (input_ids)."""
+    return "input_ids" in dataset.column_names
+
+
+def _looks_like_split_root(path: Path) -> bool:
+    """A split root has no dataset metadata of its own; it holds split dirs."""
+    if not path.is_dir():
+        return False
+    if (path / "dataset_info.json").exists() or (path / "state.json").exists():
+        return False
+    return True
+
+
+def _load_split_root(path: Path, requested: Dict[str, str]) -> Optional[Dict[str, Dataset]]:
+    """Layout B: load one subdirectory per requested split, else return None."""
+    if not _looks_like_split_root(path):
+        return None
+    loaded: Dict[str, Dataset] = {}
+    for role, name in requested.items():
+        sub = path / name
+        if not sub.is_dir():
+            return None
+        loaded[role] = load_from_disk(str(sub))
+    return loaded
+
+
+def load_splits(cfg: Config, source: Optional[str] = None) -> Dict[str, Dataset]:
+    """Load the ``{train, eval?, test?}`` splits for a recipe (no tokenization)."""
     data = cfg.data
+    source = source or data.tokenized_path or data.path
+    if source is None:
+        raise ValueError("No dataset path configured (data.path / data.tokenized_path)")
+    root = Path(source)
+    requested = _requested_splits(cfg)
 
-    if isinstance(source, DatasetDict):
-        names = set(source.keys())
-        if data.train_split not in names:
+    # Layout B: one subdirectory per split.
+    from_dirs = _load_split_root(root, requested)
+    if from_dirs is not None:
+        LOGGER.info(
+            "Loaded splits from subdirectories of %s: %s",
+            root,
+            ", ".join(f"{role}={name}" for role, name in requested.items()),
+        )
+        return from_dirs
+
+    # Layout A: a single save_to_disk root.
+    source_ds = load_from_disk(str(root))
+    if isinstance(source_ds, DatasetDict):
+        names = set(source_ds.keys())
+        out: Dict[str, Dataset] = {}
+        for role, name in requested.items():
+            if name in names:
+                out[role] = source_ds[name]
+        if "train" not in out:
             raise ValueError(
                 f"data.train_split={data.train_split!r} not in dataset splits {sorted(names)}"
             )
-        train = source[data.train_split]
-        eval_ds = source.get(data.eval_split) if data.eval_split else None
-        test_ds = source.get(data.test_split) if data.test_split else None
-
-        # Fall back to holding out part of train when no eval split exists.
-        if eval_ds is None and data.eval_fraction > 0:
-            train, eval_ds = _split_off(train, data.eval_fraction, cfg.run.seed, name="eval")
-        if test_ds is None and data.test_fraction > 0:
-            source_without_test = train
-            train, test_ds = _split_off(
-                source_without_test, data.test_fraction, cfg.run.seed, name="test"
+        if "eval" not in out and data.eval_fraction > 0:
+            out["train"], out["eval"] = _split_off(
+                out["train"], data.eval_fraction, cfg.run.seed, "eval"
             )
-        return train, eval_ds, test_ds
+        if "test" not in out and data.test_fraction > 0:
+            out["train"], out["test"] = _split_off(
+                out["train"], data.test_fraction, cfg.run.seed, "test"
+            )
+        return out
 
-    if isinstance(source, Dataset):
-        remaining = source
-        eval_ds = None
-        test_ds = None
+    if isinstance(source_ds, Dataset):
+        train = source_ds
+        out = {}
         if data.eval_fraction > 0:
-            remaining, eval_ds = _split_off(remaining, data.eval_fraction, cfg.run.seed, name="eval")
+            train, out["eval"] = _split_off(train, data.eval_fraction, cfg.run.seed, "eval")
         if data.test_fraction > 0:
-            remaining, test_ds = _split_off(
-                remaining, data.test_fraction, cfg.run.seed, name="test"
-            )
-        if eval_ds is None and data.eval_fraction == 0:
+            train, out["test"] = _split_off(train, data.test_fraction, cfg.run.seed, "test")
+        out["train"] = train
+        if data.eval_fraction == 0 and data.test_fraction == 0:
             LOGGER.warning(
-                "Source is a single Dataset and data.eval_fraction=0; training without evaluation. "
-                "Set checkpointing.metric accordingly or provide an eval split."
+                "Source is a single Dataset with no eval/test fraction; training without "
+                "evaluation. Set data.eval_fraction > 0 (or an eval split) to rank checkpoints."
             )
-        return remaining, eval_ds, test_ds
+        return out
 
-    raise TypeError(f"Unsupported dataset type from load_from_disk: {type(source).__name__}")
+    raise TypeError(f"Unsupported dataset type from load_from_disk: {type(source_ds).__name__}")
 
 
-def _split_off(
-    dataset: Dataset, fraction: float, seed: int, name: str
-) -> Tuple[Dataset, Dataset]:
+def _split_off(dataset: Dataset, fraction: float, seed: int, name: str) -> Tuple[Dataset, Dataset]:
     """Split ``fraction`` off ``dataset`` for ``name``; return (rest, held_out)."""
     if fraction <= 0:
         return dataset, None  # type: ignore[return-value]
@@ -89,12 +142,7 @@ def _split_off(
 # --------------------------------------------------------------------------- #
 # Tokenization / packing
 # --------------------------------------------------------------------------- #
-def tokenize_dataset(
-    dataset: Dataset,
-    tokenizer,
-    cfg: Config,
-    desc: str = "Tokenizing",
-) -> Dataset:
+def tokenize_dataset(dataset: Dataset, tokenizer, cfg: Config, desc: str = "Tokenizing") -> Dataset:
     """Tokenize protein sequences and optionally pack into fixed-length blocks."""
     data = cfg.data
     remove_columns = list(dataset.column_names)
@@ -118,12 +166,7 @@ def tokenize_dataset(
     if data.packing:
         tokenized = _pack(tokenized, tokenizer, cfg)
 
-    # A causal-LM collator only needs input_ids + attention_mask; ensure types.
-    keep = {"input_ids", "attention_mask"}
-    drop = [c for c in tokenized.column_names if c not in keep]
-    if drop:
-        tokenized = tokenized.remove_columns(drop)
-    return tokenized
+    return _keep_model_inputs(tokenized)
 
 
 def _pack(dataset: Dataset, tokenizer, cfg: Config) -> Dataset:
@@ -152,12 +195,7 @@ def _pack(dataset: Dataset, tokenizer, cfg: Config) -> Dataset:
             for key, values in concatenated.items()
         }
 
-    return dataset.map(
-        _group,
-        batched=True,
-        num_proc=cfg.data.num_proc,
-        desc="Packing",
-    )
+    return dataset.map(_group, batched=True, num_proc=cfg.data.num_proc, desc="Packing")
 
 
 def _append_between(flat: list, sequences: list, token: int) -> list:
@@ -171,29 +209,58 @@ def _append_between(flat: list, sequences: list, token: int) -> list:
     return out
 
 
-def build_tokenized_datasets(cfg: Config, tokenizer) -> Dict[str, Dataset]:
-    """Build the ``{train, eval, test}`` tokenized datasets for training."""
-    if cfg.data.tokenized_path:
-        LOGGER.info("Loading pre-tokenized dataset from %s", cfg.data.tokenized_path)
-        source = load_from_disk(cfg.data.tokenized_path)
-        if not isinstance(source, DatasetDict):
-            raise TypeError("data.tokenized_path must point to a DatasetDict saved by preprocessing.")
-        datasets = {"train": source[cfg.data.train_split]}
-        if cfg.data.eval_split and cfg.data.eval_split in source:
-            datasets["eval"] = source[cfg.data.eval_split]
-        if cfg.data.test_split and cfg.data.test_split in source:
-            datasets["test"] = source[cfg.data.test_split]
-    else:
-        train, eval_ds, test_ds = resolve_splits(cfg)
-        datasets = {"train": tokenize_dataset(train, tokenizer, cfg, desc="Tokenizing train")}
-        if eval_ds is not None:
-            datasets["eval"] = tokenize_dataset(eval_ds, tokenizer, cfg, desc="Tokenizing eval")
-        if test_ds is not None:
-            datasets["test"] = tokenize_dataset(test_ds, tokenizer, cfg, desc="Tokenizing test")
+def _keep_model_inputs(dataset: Dataset) -> Dataset:
+    """Drop everything except input_ids/attention_mask/labels."""
+    keep = [c for c in (*MODEL_INPUT_COLUMNS, "labels") if c in dataset.column_names]
+    drop = [c for c in dataset.column_names if c not in keep]
+    return dataset.remove_columns(drop) if drop else dataset
 
-    datasets = {k: _maybe_cap(v, cfg, k) for k, v in datasets.items()}
+
+# --------------------------------------------------------------------------- #
+# Public entry points
+# --------------------------------------------------------------------------- #
+def build_tokenized_datasets(
+    cfg: Config,
+    tokenizer,
+    force_raw: bool = False,
+    source: Optional[str] = None,
+) -> Dict[str, Dataset]:
+    """Return ``{train, eval?, test?}`` datasets ready for the Trainer.
+
+    Pre-tokenized inputs are passed through (with packing ignored); raw inputs
+    are tokenized/packed. ``data.tokenized`` overrides auto-detection and
+    ``force_raw`` always tokenizes (used by the offline preprocessing script).
+    """
+    data = cfg.data
+    splits = load_splits(cfg, source=source)
+    train = splits["train"]
+
+    pre_tokenized = data.tokenized
+    if force_raw:
+        pre_tokenized = False
+    elif pre_tokenized is None:
+        pre_tokenized = is_tokenized(train)
+
+    if pre_tokenized and not is_tokenized(train):
+        raise ValueError(
+            f"data.tokenized is enabled but split 'train' lacks 'input_ids'. "
+            f"Columns found: {train.column_names}"
+        )
+
+    datasets: Dict[str, Dataset] = {}
+    for role, split in splits.items():
+        if pre_tokenized:
+            if data.packing:
+                LOGGER.warning("data.packing=true ignored for pre-packed split %r.", role)
+            datasets[role] = _keep_model_inputs(split)
+        else:
+            datasets[role] = tokenize_dataset(split, tokenizer, cfg, desc=f"Tokenizing {role}")
+        datasets[role] = _maybe_cap(datasets[role], cfg, role)
+
+    if pre_tokenized:
+        LOGGER.info("Using pre-tokenized datasets (tokenization/packing skipped).")
     for name, ds in datasets.items():
-        LOGGER.info("%s split: %d examples", name, len(ds))
+        LOGGER.info("%s split: %d examples | columns=%s", name, len(ds), ds.column_names)
     return datasets
 
 
@@ -205,8 +272,10 @@ def _maybe_cap(dataset: Dataset, cfg: Config, split: str) -> Dataset:
     return dataset
 
 
-def preprocess_and_save(cfg: Config, tokenizer, output_path: Optional[str] = None) -> str:
-    """Tokenize the configured dataset and save a ``DatasetDict`` to disk.
+def preprocess_and_save(
+    cfg: Config, tokenizer, output_path: Optional[str] = None
+) -> str:
+    """Tokenize the configured raw dataset and save a ``DatasetDict`` to disk.
 
     This is the offline data-transformation entry point used by
     ``scripts/preprocess.py``. The result can be consumed at training time via
@@ -217,16 +286,15 @@ def preprocess_and_save(cfg: Config, tokenizer, output_path: Optional[str] = Non
             raise ValueError("--output is required when data.path is not set")
         output_path = f"{cfg.data.path.rstrip('/')}-tokenized"
 
-    # Always tokenize from the raw source, ignoring any tokenized_path.
-    original = cfg.data.tokenized_path
-    cfg.data.tokenized_path = None
-    try:
-        datasets = build_tokenized_datasets(cfg, tokenizer)
-    finally:
-        cfg.data.tokenized_path = original
-
+    datasets = build_tokenized_datasets(
+        cfg, tokenizer, force_raw=True, source=cfg.data.path
+    )
     out = DatasetDict(datasets)
     if is_main_process():
         out.save_to_disk(output_path)
-        LOGGER.info("Saved tokenized dataset (%s) to %s", {k: len(v) for k, v in out.items()}, output_path)
+        LOGGER.info(
+            "Saved tokenized dataset (%s) to %s",
+            {k: len(v) for k, v in out.items()},
+            output_path,
+        )
     return output_path

@@ -12,15 +12,18 @@ run:
   description: Full fine-tuning on protein sequences.
 
 data:
-  # Path passed to datasets.load_from_disk (a DatasetDict or a single Dataset).
-  path: /data/proteins/processed
+  # Split-root layout: <path>/<split> is a save_to_disk dataset.
+  path: /home/kabidi/workspace/datasets/uniref50/barca
   train_split: train
-  eval_split: validation
+  eval_split: valid
   test_split: null
+  # Raw data only; ignored when the dataset is pre-tokenized.
   text_column: sequence
   max_seq_length: 512
   packing: false
   packing_add_eos: true
+  # Dataset is pre-packed and pre-tokenized (has input_ids + attention_mask).
+  tokenized: true
   # Only used when the source has no eval/test split.
   eval_fraction: 0.0
   test_fraction: 0.0

@@ -71,32 +71,40 @@ No install is required either: the launch scripts prepend `src/` to
 ## Data
 
 Training data is any dataset written with `datasets.save_to_disk`, loadable via
-`datasets.load_from_disk`. It may be:
+`datasets.load_from_disk`. Two layouts are supported:
 
-- a **`DatasetDict`** with named splits (`train`, `validation`, ...), or
-- a **single `Dataset`**, split in memory using `data.eval_fraction` /
-  `data.test_fraction`.
+- **Split root** — a directory with one dataset subdirectory per split, e.g.
+  `/home/kabidi/workspace/datasets/uniref50/barca/{train,valid}`. The directory
+  names come from `data.train_split` / `data.eval_split` / `data.test_split`.
+- **Single root** — one directory holding either a `DatasetDict` (named splits)
+  or a single `Dataset` (split in memory using `data.eval_fraction` /
+  `data.test_fraction`).
 
-The sequence column defaults to `sequence` and is configurable via
-`data.text_column`. Inspect a dataset before training:
+The UniRef50 Barca dataset is **pre-packed and pre-tokenized**: each sample
+already has `input_ids` and `attention_mask`, so tokenization and packing are
+skipped automatically (and `data.text_column` is unused). Set
+`data.tokenized: true` to force this, `false` to force tokenization from raw
+sequences, or leave it `null` to auto-detect from the train split.
+
+Because the data is already packed into fixed-length blocks, keep
+`data.packing: false` (it is ignored with a warning if enabled).
+
+Inspect a dataset before training:
 
 ```bash
-python scripts/inspect_dataset.py /data/proteins/processed \
-    --column sequence --tokenizer khairi/barca-0.8b-base
+python scripts/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca
 ```
 
-Generate splits if the source has none:
+For raw (untokenized) sequence data, use `data.text_column` (default
+`sequence`) and optionally tokenize ahead of time; reference the result from a
+recipe via `data.tokenized_path`:
 
 ```bash
+python scripts/inspect_dataset.py /data/proteins/raw \
+    --column sequence --tokenizer khairi/barca-0.8b-base
 python scripts/split_dataset.py /data/proteins/raw \
     --output /data/proteins/processed \
     --eval-fraction 0.02 --test-fraction 0.02 --seed 42
-```
-
-Tokenize/pack ahead of time (recommended for large corpora); reference the
-result from a recipe via `data.tokenized_path`:
-
-```bash
 ./scripts/preprocess.sh configs/lora.yaml --output /data/proteins/tokenized
 ```
 

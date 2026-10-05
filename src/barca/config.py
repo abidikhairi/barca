@@ -50,8 +50,11 @@ class DataConfig:
     eval_split: Optional[str] = "validation"
     # Optional test split to evaluate after training.
     test_split: Optional[str] = None
-    # Column holding the protein sequence.
+    # Column holding the protein sequence (only used for raw, untokenized data).
     text_column: str = "sequence"
+    # Whether the source already provides input_ids/attention_mask
+    # (pre-tokenized / pre-packed). None => auto-detect from the train split.
+    tokenized: Optional[bool] = None
 
     max_seq_length: int = 512
     # Concatenate sequences and chunk into ``max_seq_length`` blocks.
