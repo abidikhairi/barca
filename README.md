@@ -1,0 +1,190 @@
+# Barca
+
+Training and fine-tuning toolkit for the **Barca** protein language model
+family (named after the Barcid family of Carthage — most famously
+**Hannibal Barca**).
+
+This repo focuses on fine-tuning [`khairi/barca-0.8b-base`](https://huggingface.co/khairi/barca-0.8b-base)
+— a Llama-style, decoder-only model — on protein sequence datasets with a
+causal-language-modeling objective. It supports **full fine-tuning**, **LoRA**
+and **QLoRA**, driven entirely by YAML recipes, with Weights & Biases logging
+and automatic retention of the **top-3 checkpoints by evaluation loss**.
+
+---
+
+## Features
+
+- **YAML recipes** (`configs/`) for every run — no code changes to sweep settings.
+- **Full / LoRA / QLoRA** training selected with a single flag.
+- **Tokenization + packing** utilities for large protein corpora.
+- **Top-k checkpointing**: keeps only the best `k=3` checkpoints by `eval_loss`
+  on disk (configurable metric and direction).
+- **W&B logging** of metrics, the resolved recipe, and optional model watching.
+- Works with datasets saved via `datasets.save_to_disk` / `load_from_disk`.
+- Multi-GPU via `torchrun`.
+
+---
+
+## Layout
+
+```
+barca/
+├── configs/                  # YAML training recipes
+│   ├── full_ft.yaml
+│   ├── lora.yaml
+│   └── qlora.yaml
+├── scripts/                  # CLI utilities and launch helpers
+│   ├── inspect_dataset.py    # dataset schema + sequence-length stats
+│   ├── split_dataset.py      # (re)build train/validation/test splits
+│   ├── preprocess.py         # tokenize/pack offline -> DatasetDict
+│   ├── train.sh
+│   └── preprocess.sh
+├── src/barca/
+│   ├── config.py             # typed recipe parsing
+│   ├── data.py               # loading, splitting, tokenization, packing
+│   ├── model.py              # tokenizer/model loading + PEFT
+│   ├── callbacks.py          # top-k checkpoint callback, W&B config logging
+│   ├── train.py              # training entry point
+│   └── utils.py              # seeding, dtype, logging helpers
+└── tests/                    # unit tests (config + checkpoint callback)
+```
+
+---
+
+## Setup
+
+The training environment is expected to already provide the required libraries
+(torch, transformers, datasets, peft, accelerate, wandb, ...). To make the
+package importable on the remote server, install it in editable mode:
+
+```bash
+pip install -e .            # core deps
+pip install -e ".[qlora]"   # + bitsandbytes for 4-bit training
+pip install -e ".[flash]"   # + flash-attention (optional)
+```
+
+No install is required either: the launch scripts prepend `src/` to
+`PYTHONPATH`, so `python -m barca.train ...` works from a fresh checkout.
+
+---
+
+## Data
+
+Training data is any dataset written with `datasets.save_to_disk`, loadable via
+`datasets.load_from_disk`. It may be:
+
+- a **`DatasetDict`** with named splits (`train`, `validation`, ...), or
+- a **single `Dataset`**, split in memory using `data.eval_fraction` /
+  `data.test_fraction`.
+
+The sequence column defaults to `sequence` and is configurable via
+`data.text_column`. Inspect a dataset before training:
+
+```bash
+python scripts/inspect_dataset.py /data/proteins/processed \
+    --column sequence --tokenizer khairi/barca-0.8b-base
+```
+
+Generate splits if the source has none:
+
+```bash
+python scripts/split_dataset.py /data/proteins/raw \
+    --output /data/proteins/processed \
+    --eval-fraction 0.02 --test-fraction 0.02 --seed 42
+```
+
+Tokenize/pack ahead of time (recommended for large corpora); reference the
+result from a recipe via `data.tokenized_path`:
+
+```bash
+./scripts/preprocess.sh configs/lora.yaml --output /data/proteins/tokenized
+```
+
+---
+
+## Training
+
+1. Edit a recipe in `configs/` (at minimum set `data.path` and the W&B
+   `project`/`entity`).
+2. Launch:
+
+```bash
+# Single GPU
+./scripts/train.sh configs/lora.yaml
+
+# Override output directory / run name, disable W&B
+./scripts/train.sh configs/full_ft.yaml \
+    --output_dir runs/barca-full-ft-1 --run_name barca-full-ft-1 --no_wandb
+
+# Multi-GPU
+NUM_GPUS=4 ./scripts/train.sh configs/qlora.yaml
+
+# Resume
+./scripts/train.sh configs/lora.yaml --resume_from_checkpoint outputs/barca-0.8b-lora/checkpoint-800
+```
+
+Equivalent direct invocation:
+
+```bash
+python -m barca.train --config configs/lora.yaml
+```
+
+### Recipe structure
+
+Each YAML file has these sections: `run`, `data`, `tokenizer`, `model`, `peft`,
+`training`, `checkpointing`, `wandb`. The `training` section is forwarded
+verbatim to `transformers.TrainingArguments`; everything else is validated by
+`barca.config` so typos fail fast. Unknown keys raise an error.
+
+### Checkpoint policy
+
+`checkpointing.top_k: 3` keeps the three checkpoints with the lowest
+`eval_loss` (set `metric` / `greater_is_better` to change this). Evaluation and
+saving are forced to the same cadence (`save_steps == eval_steps`) so a saved
+checkpoint always matches the metric recorded with it. The Trainer's own
+`save_total_limit` is disabled — `TopKCheckpointCallback` owns retention.
+
+Checkpoints are kept **locally only**; W&B receives metrics, not model
+artifacts. The best checkpoint is reloaded at the end of training and written
+to `run.output_dir` as the final model.
+
+---
+
+## W&B
+
+Set credentials before launching:
+
+```bash
+export WANDB_API_KEY=...
+# Optional: export WANDB_ENTITY=your-team
+```
+
+`wandb.project`, `wandb.entity`, `wandb.tags` and `wandb.notes` come from the
+recipe. Every run is tagged with a short config fingerprint (`cfg-XXXXXXXX`) for
+traceability, and the resolved YAML is saved to `output_dir/config.yaml` and
+uploaded to the run. Pass `--no_wandb` (or `wandb.enabled: false`) to disable.
+
+---
+
+## Remote server notes
+
+- The env is assumed to contain all runtime libraries; no dependency install is
+  required, but `pip install -e .` is the cleanest way to expose the `barca`
+  package.
+- Set `model.attn_implementation` to `flash_attention_2` only if flash-attn is
+  installed; otherwise use `sdpa` or `null`.
+- Cross-node/multi-GPU launches use `torchrun` (see `scripts/train.sh`).
+- Adjust `data.num_proc`, `dataloader_num_workers` and
+  `per_device_train_batch_size` to the server's CPU/RAM/VRAM budget.
+
+---
+
+## Development
+
+```bash
+pytest -q
+ruff check .
+```
+
+`tests/test_config.py` only needs PyYAML; `tests/test_callbacks.py` also needs
+`transformers`.

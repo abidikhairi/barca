@@ -1,0 +1,85 @@
+# QLoRA (4-bit) fine-tuning recipe for khairi/barca-0.8b-base.
+# Requires `bitsandbytes` (pip install bitsandbytes).
+# Run with:  python -m barca.train --config configs/qlora.yaml
+
+run:
+  name: barca-0.8b-qlora
+  output_dir: outputs/barca-0.8b-qlora
+  seed: 42
+  description: 4-bit QLoRA fine-tuning on protein sequences.
+
+data:
+  path: /data/proteins/processed
+  train_split: train
+  eval_split: validation
+  text_column: sequence
+  max_seq_length: 1024
+  packing: true
+  packing_add_eos: true
+  eval_fraction: 0.0
+  num_proc: 8
+
+tokenizer:
+  name_or_path: khairi/barca-0.8b-base
+  trust_remote_code: true
+  use_fast: true
+
+model:
+  name_or_path: khairi/barca-0.8b-base
+  trust_remote_code: true
+  dtype: bfloat16
+  attn_implementation: null
+  gradient_checkpointing: true
+
+peft:
+  enabled: true
+  method: qlora
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: null
+  bias: none
+  use_rslora: false
+  quant:
+    load_in_4bit: true
+    load_in_8bit: false
+    bnb_4bit_quant_type: nf4
+    bnb_4bit_compute_dtype: bfloat16
+    bnb_4bit_use_double_quant: true
+
+training:
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  num_train_epochs: 3
+  logging_steps: 10
+  eval_strategy: steps
+  eval_steps: 200
+  save_strategy: steps
+  save_steps: 200
+  bf16: true
+  optim: paged_adamw_8bit
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 4
+  report_to: [wandb]
+
+checkpointing:
+  top_k: 3
+  metric: eval_loss
+  greater_is_better: false
+  keep_last: false
+
+wandb:
+  enabled: true
+  project: barca-protein
+  entity: null
+  tags: [qlora, 4bit, protein, barca-0.8b]
+  notes: QLoRA fine-tune of barca-0.8b-base.
+  log_config: true
+  watch: "false"

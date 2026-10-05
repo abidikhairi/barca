@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "barca"
+version = "0.1.0"
+description = "Training and fine-tuning utilities for the Barca protein language model family."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "khairi" }]
+keywords = ["protein", "language-model", "fine-tuning", "lora", "qlora"]
+dependencies = [
+  "torch>=2.1",
+  "transformers>=4.40",
+  "datasets>=2.18",
+  "accelerate>=0.29",
+  "peft>=0.11",
+  "safetensors>=0.4",
+  "sentencepiece>=0.2",
+  "pyyaml>=6.0",
+  "wandb>=0.17",
+  "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+qlora = ["bitsandbytes>=0.43"]
+flash = ["flash-attn>=2.5"]
+dev = ["pytest>=8.0", "ruff>=0.5"]
+
+[project.scripts]
+barca-train = "barca.train:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

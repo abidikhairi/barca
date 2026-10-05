@@ -1,0 +1,36 @@
+# Byte-compiled / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Training outputs / checkpoints / logs
+outputs/
+runs/
+checkpoints/
+wandb/
+*.ckpt
+
+# Data (never commit datasets)
+data/
+*.arrow
+dataset_info.json
+state.json
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
