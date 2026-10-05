@@ -68,6 +68,25 @@ No install is required either: the launch scripts prepend `src/` to
 
 ---
 
+## Make targets
+
+A `Makefile` wraps the common operations (defaults target the GPU server; copy
+`Makefile.local.example` to `Makefile.local` to override):
+
+```bash
+make sync                              # rsync this repo to the server
+make train                             # fine-tune with configs/lora.yaml
+make train RECIPE=configs/full_ft.yaml # ...or another recipe
+make train RECIPE=configs/qlora.yaml NUM_GPUS=1
+make inspect                           # show remote dataset splits/lengths
+make pull checkpoint-1000              # copy a checkpoint back into runs/
+```
+
+`make pull` skips `optimizer.pt` (the AdamW state) to keep the transfer small;
+the checkpoint still contains the model weights and `trainer_state.json`.
+
+---
+
 ## Data
 
 Training data is any dataset written with `datasets.save_to_disk`, loadable via

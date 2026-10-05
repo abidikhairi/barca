@@ -45,7 +45,6 @@ help:
 
 sync:
 	$(RSYNC) \
-		--exclude='.git/' \
 		--exclude='__pycache__/' --exclude='*.py[cod]' --exclude='.pytest_cache/' \
 		--exclude='.venv/' --exclude='outputs/' --exclude='runs/' --exclude='wandb/' \
 		--exclude='Makefile.local' \
