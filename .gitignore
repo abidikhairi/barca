@@ -34,3 +34,6 @@ state.json
 .DS_Store
 .vscode/
 .idea/
+
+# Local server overrides for the Makefile
+Makefile.local
