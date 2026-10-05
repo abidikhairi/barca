@@ -28,7 +28,7 @@ model:
   name_or_path: khairi/barca-0.8b-base
   trust_remote_code: true
   dtype: bfloat16
-  attn_implementation: flash_attention_2
+  attn_implementation: sdpa
   gradient_checkpointing: true
 
 peft:

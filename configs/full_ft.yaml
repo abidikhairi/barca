@@ -45,7 +45,8 @@ model:
   trust_remote_code: true
   dtype: bfloat16
   # flash_attention_2 | sdpa | eager | null
-  attn_implementation: flash_attention_2
+  # (use flash_attention_2 only if flash-attn is installed on the server)
+  attn_implementation: sdpa
   gradient_checkpointing: true
 
 peft:
