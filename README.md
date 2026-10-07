@@ -189,9 +189,10 @@ model:
 ```
 
 All parameters are frozen and only the selected rows of the input embedding
-(and the tied `lm_head`) are trained; gradients for every other row are masked,
-so the pretrained embedding rows never move. `weight_decay` is forced to `0`
-for this mode (decoupled decay would otherwise shrink the frozen rows).
+(and the tied `lm_head`) are trained; gradients for every other row are masked.
+In addition, `RestoreFrozenEmbeddingRowsCallback` restores the non-selected
+rows from a snapshot after each optimizer step, so `weight_decay` decays only
+the selected rows instead of the whole vocabulary matrix.
 
 `barca-0.8b-base` is Qwen3.5 with 22 added protein tokens at ids
 **248077–248098**: the 20 ζ-prefixed amino acids (`ζA`…`ζY`) plus
