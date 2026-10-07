@@ -52,6 +52,10 @@ class TopKCheckpointCallback(TrainerCallback):
         """Currently retained checkpoint directories, best first."""
         return [entry[3] for entry in self._kept]
 
+    def best_path(self) -> Optional[str]:
+        """Path of the best retained checkpoint, or None if none were kept."""
+        return self._kept[0][3] if self._kept else None
+
     # -- Trainer hooks ----------------------------------------------------- #
     def on_evaluate(self, args, state, control, metrics=None, **kwargs):
         if metrics and metrics.get(self.metric) is not None:

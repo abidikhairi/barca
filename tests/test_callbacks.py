@@ -34,6 +34,7 @@ def test_keeps_best_three_by_eval_loss(tmp_path):
 
     assert _remaining(tmp_path) == ["checkpoint-20", "checkpoint-30", "checkpoint-40"]
     assert len(cb.kept_paths()) == 3
+    assert cb.best_path().endswith("checkpoint-40")
 
 
 def test_greater_is_better(tmp_path):

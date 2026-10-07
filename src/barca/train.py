@@ -33,6 +33,14 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     parser.add_argument(
         "--no_wandb", action="store_true", help="Disable W&B reporting for this run."
     )
+    # Quick overrides for smoke tests / sweeps.
+    parser.add_argument("--max_steps", type=int, default=None)
+    parser.add_argument("--num_train_epochs", type=float, default=None)
+    parser.add_argument("--per_device_train_batch_size", type=int, default=None)
+    parser.add_argument("--gradient_accumulation_steps", type=int, default=None)
+    parser.add_argument("--learning_rate", type=float, default=None)
+    parser.add_argument("--max_train_samples", type=int, default=None)
+    parser.add_argument("--max_eval_samples", type=int, default=None)
     return parser.parse_args(argv)
 
 
@@ -45,6 +53,21 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.run.seed = args.seed
     if args.no_wandb:
         cfg.wandb.enabled = False
+
+    for key in (
+        "max_steps",
+        "num_train_epochs",
+        "per_device_train_batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+    ):
+        value = getattr(args, key)
+        if value is not None:
+            cfg.training[key] = value
+    if args.max_train_samples is not None:
+        cfg.data.max_train_samples = args.max_train_samples
+    if args.max_eval_samples is not None:
+        cfg.data.max_eval_samples = args.max_eval_samples
     return cfg
 
 
@@ -75,12 +98,14 @@ def build_training_arguments(cfg: Config, has_eval: bool = True, selective: bool
     if has_eval:
         training["metric_for_best_model"] = cfg.checkpointing.metric
         training["greater_is_better"] = cfg.checkpointing.greater_is_better
-        training["load_best_model_at_end"] = True
     else:
         training["metric_for_best_model"] = None
-        training["load_best_model_at_end"] = False
         # Without evaluation we cannot rank checkpoints; avoid filling disk.
         training.setdefault("save_total_limit", 3)
+    # The Trainer's internal best-model reload uses raw state-dict keys, which
+    # do not match the Qwen3.5 save format (model.language_model.* vs model.*).
+    # We keep top-k checkpoints and reload the best ourselves via from_pretrained.
+    training["load_best_model_at_end"] = False
 
     # `eval_strategy` replaced `evaluation_strategy` in recent transformers.
     sig = set(inspect.signature(TrainingArguments.__init__).parameters)
@@ -251,13 +276,14 @@ def main(argv: Optional[list] = None) -> None:
 
     from .callbacks import TopKCheckpointCallback, WandbConfigCallback
 
+    topk_callback = TopKCheckpointCallback(
+        metric=cfg.checkpointing.metric,
+        greater_is_better=cfg.checkpointing.greater_is_better,
+        top_k=cfg.checkpointing.top_k,
+        keep_last=cfg.checkpointing.keep_last,
+    )
     callbacks = [
-        TopKCheckpointCallback(
-            metric=cfg.checkpointing.metric,
-            greater_is_better=cfg.checkpointing.greater_is_better,
-            top_k=cfg.checkpointing.top_k,
-            keep_last=cfg.checkpointing.keep_last,
-        ),
+        topk_callback,
         WandbConfigCallback(
             config_file=cfg.source_path,
             watch=cfg.wandb.watch,
@@ -278,9 +304,27 @@ def main(argv: Optional[list] = None) -> None:
     LOGGER.info("Starting training.")
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
 
-    # Save the best (already loaded by the Trainer) model as the final artifact.
+    # Write the best checkpoint to output_dir as the final model. We reload via
+    # from_pretrained because Trainer's internal loader does not understand the
+    # Qwen3.5 save format (model.language_model.* vs model.*).
     final_dir = ensure_dir(cfg.run.output_dir)
-    trainer.save_model(str(final_dir))
+    best_path = topk_callback.best_path()
+    if best_path:
+        LOGGER.info("Best checkpoint: %s -> saving to %s", best_path, final_dir)
+        from transformers import AutoModelForCausalLM
+
+        from .model import _from_pretrained_autodtype
+        from .utils import resolve_dtype
+
+        best_model = _from_pretrained_autodtype(
+            AutoModelForCausalLM,
+            best_path,
+            resolve_dtype(cfg.model.dtype),
+            {"trust_remote_code": cfg.model.trust_remote_code},
+        )
+        best_model.save_pretrained(str(final_dir))
+    else:
+        trainer.save_model(str(final_dir))
     tokenizer.save_pretrained(str(final_dir))
     if is_main_process():
         cfg.to_yaml(Path(final_dir) / "config.yaml")
