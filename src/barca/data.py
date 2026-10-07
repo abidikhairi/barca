@@ -233,23 +233,25 @@ def build_tokenized_datasets(
     """
     data = cfg.data
     splits = load_splits(cfg, source=source)
-    train = splits["train"]
-
-    pre_tokenized = data.tokenized
-    if force_raw:
-        pre_tokenized = False
-    elif pre_tokenized is None:
-        pre_tokenized = is_tokenized(train)
-
-    if pre_tokenized and not is_tokenized(train):
-        raise ValueError(
-            f"data.tokenized is enabled but split 'train' lacks 'input_ids'. "
-            f"Columns found: {train.column_names}"
-        )
 
     datasets: Dict[str, Dataset] = {}
     for role, split in splits.items():
-        if pre_tokenized:
+        already_tokenized = is_tokenized(split)
+        if force_raw:
+            split_tokenized = False
+        elif data.tokenized is None:
+            # Auto-detect per split: train may be pre-packed while eval is raw.
+            split_tokenized = already_tokenized
+        else:
+            split_tokenized = bool(data.tokenized)
+            if split_tokenized and not already_tokenized:
+                raise ValueError(
+                    f"data.tokenized=true but split {role!r} lacks 'input_ids' "
+                    f"(columns: {split.column_names}). Set data.tokenized to null to tokenize "
+                    "raw splits on the fly."
+                )
+
+        if split_tokenized:
             if data.packing:
                 LOGGER.warning("data.packing=true ignored for pre-packed split %r.", role)
             datasets[role] = _keep_model_inputs(split)
@@ -257,8 +259,6 @@ def build_tokenized_datasets(
             datasets[role] = tokenize_dataset(split, tokenizer, cfg, desc=f"Tokenizing {role}")
         datasets[role] = _maybe_cap(datasets[role], cfg, role)
 
-    if pre_tokenized:
-        LOGGER.info("Using pre-tokenized datasets (tokenization/packing skipped).")
     for name, ds in datasets.items():
         LOGGER.info("%s split: %d examples | columns=%s", name, len(ds), ds.column_names)
     return datasets

@@ -146,3 +146,29 @@ def test_explicit_tokenized_without_input_ids_raises(tmp_path):
         assert "lacks 'input_ids'" in str(exc)
     else:  # pragma: no cover
         raise AssertionError("expected ValueError")
+
+
+def test_mixed_splits_tokenized_train_raw_eval(tmp_path):
+    """train is pre-tokenized, valid is raw text -> eval must be tokenized."""
+    root = tmp_path / "mixed"
+    Dataset.from_dict(
+        {"input_ids": [[1, 4, 5, 6], [7, 8, 9, 10]], "attention_mask": [[1] * 4, [1] * 4]}
+    ).save_to_disk(root / "train")
+    Dataset.from_dict({"text": ["ACDE", "MNPQ"]}).save_to_disk(root / "valid")
+
+    cfg = _cfg(
+        str(root),
+        train_split="train",
+        eval_split="valid",
+        text_column="text",
+        max_seq_length=6,
+        num_proc=None,
+    )
+    datasets = build_tokenized_datasets(cfg, FakeTokenizer())
+
+    # train passed through untouched
+    assert set(datasets["train"].column_names) == {"input_ids", "attention_mask"}
+    assert datasets["train"]["input_ids"][0] == [1, 4, 5, 6]
+    # eval tokenized from the raw `text` column
+    assert set(datasets["eval"].column_names) <= {"input_ids", "attention_mask"}
+    assert len(datasets["eval"]["input_ids"][0]) == 4

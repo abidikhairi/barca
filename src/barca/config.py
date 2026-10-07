@@ -114,10 +114,33 @@ class ModelConfig:
     # Passed through to ``gradient_checkpointing_enable``.
     gradient_checkpointing_use_reentrant: bool = False
 
+    # -- selective embedding training --------------------------------------
+    # When any of the three options below is set, the whole model is frozen and
+    # only the embedding rows for the selected tokens (plus their tied lm_head
+    # rows) are trained. This is how the new protein tokens are fine-tuned
+    # without touching the pretrained vocabulary embeddings.
+    #
+    # Token strings to train, e.g. ["<protein>", "</protein>", "ζA", ...].
+    trainable_tokens: Optional[List[str]] = None
+    # Explicit token ids to train (combined with trainable_tokens if both set).
+    trainable_token_ids: Optional[List[int]] = None
+    # Inclusive [start, end] id range to train (e.g. added protein tokens).
+    trainable_token_range: Optional[List[int]] = None
+
     def __post_init__(self) -> None:
         allowed = {"float32", "float16", "bfloat16", "auto", "fp32", "fp16", "bf16"}
         if self.dtype not in allowed:
             raise ValueError(f"model.dtype must be one of {sorted(allowed)}, got {self.dtype!r}")
+        rng = self.trainable_token_range
+        if rng is not None and (len(rng) != 2 or int(rng[0]) > int(rng[1])):
+            raise ValueError(
+                "model.trainable_token_range must be an inclusive [start, end] with start <= end"
+            )
+
+    @property
+    def selective_token_training(self) -> bool:
+        """True when only selected token embeddings should be trained."""
+        return bool(self.trainable_tokens or self.trainable_token_ids or self.trainable_token_range)
 
 
 @dataclass

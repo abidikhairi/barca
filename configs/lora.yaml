@@ -8,14 +8,14 @@ run:
   description: LoRA fine-tuning on protein sequences.
 
 data:
-  path: /home/kabidi/workspace/datasets/uniref50/barca
+  path: /home/kabidi/workspace/datasets/uniref50/barca_5m
   train_split: train
   eval_split: valid
-  text_column: sequence
-  max_seq_length: 512
+  text_column: text
+  max_seq_length: 515
   packing: false
   packing_add_eos: true
-  tokenized: true
+  tokenized: null
   eval_fraction: 0.0
   num_proc: 8
 
@@ -72,7 +72,7 @@ checkpointing:
 
 wandb:
   enabled: true
-  project: barca-protein
+  project: Barca
   entity: null
   tags: [lora, protein, barca-0.8b]
   notes: LoRA fine-tune of barca-0.8b-base.

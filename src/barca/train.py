@@ -51,7 +51,7 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
 # --------------------------------------------------------------------------- #
 # TrainingArguments construction
 # --------------------------------------------------------------------------- #
-def build_training_arguments(cfg: Config, has_eval: bool = True):
+def build_training_arguments(cfg: Config, has_eval: bool = True, selective: bool = False):
     """Merge the recipe's ``training`` section with enforced, safe defaults.
 
     We force evaluation and saving to happen at the same cadence so that the
@@ -141,6 +141,16 @@ def build_training_arguments(cfg: Config, has_eval: bool = True):
 
     if warmup_ratio is not None and "warmup_ratio" in sig:
         training["warmup_ratio"] = warmup_ratio
+
+    # Selective token training: the optimizer only holds the shared embedding
+    # matrix, so decay would shrink every row, including the frozen ones.
+    if selective:
+        if training.get("weight_decay", 0.0):
+            LOGGER.warning(
+                "Selective token training: forcing weight_decay=0 so frozen embedding "
+                "rows are not decayed."
+            )
+        training["weight_decay"] = 0.0
 
     args = TrainingArguments(**training)
 
@@ -232,10 +242,12 @@ def main(argv: Optional[list] = None) -> None:
             "cannot be ranked. Set data.eval_fraction > 0 to enable top-k checkpointing."
         )
 
-    model = load_model(cfg)
+    model = load_model(cfg, tokenizer)
 
     data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-    training_args = build_training_arguments(cfg, has_eval=has_eval)
+    training_args = build_training_arguments(
+        cfg, has_eval=has_eval, selective=cfg.model.selective_token_training
+    )
 
     from .callbacks import TopKCheckpointCallback, WandbConfigCallback
 

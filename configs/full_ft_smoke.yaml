@@ -1,0 +1,82 @@
+# Smoke-test recipe: 2000 training samples / 200 eval samples from barca_5m.
+# Used to validate the pipeline and fix batch size + learning rate before the
+# full run. Run with:
+#   python -m barca.train --config configs/full_ft_smoke.yaml
+#
+# Mirrors configs/full_ft.yaml but with capped data and a short schedule.
+
+run:
+  name: barca-0.8b-full-ft-smoke
+  output_dir: outputs/barca-0.8b-full-ft-smoke
+  seed: 42
+  description: Smoke test (2k samples) for selective protein-token fine-tuning.
+
+data:
+  path: /home/kabidi/workspace/datasets/uniref50/barca_5m
+  train_split: train
+  eval_split: valid
+  test_split: null
+  text_column: text
+  max_seq_length: 515
+  packing: false
+  packing_add_eos: true
+  tokenized: null
+  eval_fraction: 0.0
+  test_fraction: 0.0
+  num_proc: 8
+  max_train_samples: 2000
+  max_eval_samples: 200
+
+tokenizer:
+  name_or_path: khairi/barca-0.8b-base
+  trust_remote_code: true
+  use_fast: true
+
+model:
+  name_or_path: khairi/barca-0.8b-base
+  trust_remote_code: true
+  dtype: bfloat16
+  attn_implementation: sdpa
+  gradient_checkpointing: true
+  # 20 zeta-prefixed amino acids + <protein> + </protein>
+  trainable_token_range: [248077, 248098]
+
+peft:
+  enabled: false
+
+training:
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 1
+  learning_rate: 1.0e-3
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.0
+  num_train_epochs: 1
+  logging_steps: 5
+  eval_strategy: steps
+  eval_steps: 25
+  save_strategy: steps
+  save_steps: 25
+  bf16: true
+  optim: adamw_torch
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 4
+  report_to: [wandb]
+
+checkpointing:
+  top_k: 3
+  metric: eval_loss
+  greater_is_better: false
+  keep_last: false
+
+wandb:
+  enabled: true
+  project: Barca
+  entity: null
+  tags: [full-finetune, smoke, protein, barca-0.8b]
+  notes: 2k-sample smoke test for selective protein-token fine-tuning.
+  log_config: true
+  watch: "false"
