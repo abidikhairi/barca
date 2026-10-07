@@ -1,4 +1,4 @@
-# Smoke-test recipe: 2000 training samples / 200 eval samples from barca_5m.
+# Smoke-test recipe: 512 training samples / 200 eval samples from barca_5m.
 # Used to validate the pipeline and fix batch size + learning rate before the
 # full run. Run with:
 #   python -m barca.train --config configs/full_ft_smoke.yaml
@@ -24,7 +24,7 @@ data:
   eval_fraction: 0.0
   test_fraction: 0.0
   num_proc: 8
-  max_train_samples: 2000
+  max_train_samples: 512
   max_eval_samples: 200
 
 tokenizer:
@@ -78,6 +78,6 @@ wandb:
   project: Barca
   entity: null
   tags: [full-finetune, smoke, protein, barca-0.8b]
-  notes: 2k-sample smoke test for selective protein-token fine-tuning.
+  notes: 512-sample smoke test for selective protein-token fine-tuning.
   log_config: true
   watch: "false"
