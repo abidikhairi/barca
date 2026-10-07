@@ -157,6 +157,17 @@ Equivalent direct invocation:
 python -m barca.train --config configs/lora.yaml
 ```
 
+Quick overrides (useful for smoke tests and sweeps) are available on the CLI:
+
+```bash
+python -m barca.train --config configs/full_ft_smoke.yaml \
+    --max_steps 200 --per_device_train_batch_size 32 --learning_rate 2e-3 \
+    --max_train_samples 2000 --max_eval_samples 200 --no_wandb \
+    --set gradient_checkpointing=false
+```
+
+`--set KEY=VALUE` patches any single `transformers.TrainingArguments` field.
+
 ### Recipe structure
 
 Each YAML file has these sections: `run`, `data`, `tokenizer`, `model`, `peft`,

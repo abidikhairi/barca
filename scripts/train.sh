@@ -16,6 +16,8 @@ shift || true
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONPATH="${REPO_ROOT}/src:${PYTHONPATH:-}"
 export TOKENIZERS_PARALLELISM=false
+# Reduces CUDA allocator fragmentation for this attention-heavy model.
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 PYTHON="${PYTHON:-python}"
 NUM_GPUS="${NUM_GPUS:-1}"

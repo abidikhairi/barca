@@ -45,8 +45,9 @@ peft:
   enabled: false
 
 training:
-  per_device_train_batch_size: 16
+  per_device_train_batch_size: 32
   per_device_eval_batch_size: 16
+  # Keep the smoke short: no accumulation, so 2000 samples => ~63 steps.
   gradient_accumulation_steps: 1
   learning_rate: 1.0e-3
   lr_scheduler_type: cosine

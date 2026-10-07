@@ -59,9 +59,11 @@ peft:
   method: lora
 
 training:
-  per_device_train_batch_size: 16
-  per_device_eval_batch_size: 16
-  gradient_accumulation_steps: 1
+  per_device_train_batch_size: 32
+  per_device_eval_batch_size: 32
+  # Effective batch = 32 * 8 = 256. 32 is the largest per-device batch that
+  # fits (bs64 OOMs) and needs gradient_checkpointing=true (bs32 without it OOMs).
+  gradient_accumulation_steps: 8
   learning_rate: 1.0e-3
   lr_scheduler_type: cosine
   warmup_ratio: 0.03
