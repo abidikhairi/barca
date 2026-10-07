@@ -17,9 +17,10 @@ SSH_PORT   ?= 2224
 SSH_USER   ?= kabidi
 REMOTE_DIR ?= /home/kabidi/workspace/projects/barca
 REMOTE_PY  ?= /opt/miniconda3/bin/python
-DATA       ?= /home/kabidi/workspace/datasets/uniref50/barca
+DATA       ?= /home/kabidi/workspace/datasets/uniref50/barca_5m
 
 RECIPE     ?= configs/lora.yaml
+SMOKE_RECIPE ?= configs/full_ft_smoke.yaml
 NUM_GPUS   ?= 1
 EXTRA_ARGS ?=
 
@@ -32,12 +33,13 @@ RSYNC := rsync -az
 
 .DEFAULT_GOAL := help
 
-.PHONY: help sync train finetune inspect pull
+.PHONY: help sync train finetune smoke inspect pull
 
 help:
 	@echo "Barca workflow targets:"
 	@echo "  make sync                 rsync this repo to $(SSH_USER)@$(SSH_HOST):$(REMOTE_DIR)"
 	@echo "  make train                train on the server (RECIPE=$(RECIPE), NUM_GPUS=$(NUM_GPUS))"
+	@echo "  make smoke                run the smoke recipe ($(SMOKE_RECIPE))"
 	@echo "  make inspect              inspect DATA=$(DATA) on the server"
 	@echo "  make pull <checkpoint>    copy $(REMOTE_RUN_DIR)/<checkpoint> into $(LOCAL_RUN_DIR)/"
 	@echo ""
@@ -56,6 +58,9 @@ train:
 
 # Alias kept for parity with the sibling project's workflow.
 finetune: train
+
+smoke:
+	$(SSH) 'cd $(REMOTE_DIR) && PYTHON=$(REMOTE_PY) NUM_GPUS=$(NUM_GPUS) bash scripts/train.sh $(SMOKE_RECIPE) $(EXTRA_ARGS)'
 
 inspect:
 	$(SSH) 'cd $(REMOTE_DIR) && PYTHONPATH=src $(REMOTE_PY) scripts/inspect_dataset.py $(DATA)'

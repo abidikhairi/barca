@@ -78,6 +78,7 @@ make sync                              # rsync this repo to the server
 make train                             # fine-tune with configs/lora.yaml
 make train RECIPE=configs/full_ft.yaml # ...or another recipe
 make train RECIPE=configs/qlora.yaml NUM_GPUS=1
+make smoke                             # run configs/full_ft_smoke.yaml (2k samples)
 make inspect                           # show remote dataset splits/lengths
 make pull checkpoint-1000              # copy a checkpoint back into runs/
 ```
@@ -93,25 +94,25 @@ Training data is any dataset written with `datasets.save_to_disk`, loadable via
 `datasets.load_from_disk`. Two layouts are supported:
 
 - **Split root** — a directory with one dataset subdirectory per split, e.g.
-  `/home/kabidi/workspace/datasets/uniref50/barca/{train,valid}`. The directory
-  names come from `data.train_split` / `data.eval_split` / `data.test_split`.
+  `/home/kabidi/workspace/datasets/uniref50/barca_5m/{train,valid}`. The
+  directory names come from `data.train_split` / `data.eval_split` /
+  `data.test_split`.
 - **Single root** — one directory holding either a `DatasetDict` (named splits)
   or a single `Dataset` (split in memory using `data.eval_fraction` /
   `data.test_fraction`).
 
-The UniRef50 Barca dataset is **pre-packed and pre-tokenized**: each sample
-already has `input_ids` and `attention_mask`, so tokenization and packing are
-skipped automatically (and `data.text_column` is unused). Set
-`data.tokenized: true` to force this, `false` to force tokenization from raw
-sequences, or leave it `null` to auto-detect from the train split.
-
-Because the data is already packed into fixed-length blocks, keep
+Tokenization is detected **per split**. In `barca_5m`, `train` is already
+pre-packed and pre-tokenized (`input_ids` + `attention_mask`, fixed length 515),
+while `valid` is raw (`entry`, `organism`, `sequence`, `text`) and is tokenized
+on the fly from `data.text_column` (`text`). Set `data.tokenized: true` to
+require pre-tokenized splits, `false` to force tokenization, or leave it `null`
+(default) to auto-detect each split. Because `train` is already packed, keep
 `data.packing: false` (it is ignored with a warning if enabled).
 
 Inspect a dataset before training:
 
 ```bash
-python scripts/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca
+python scripts/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca_5m
 ```
 
 For raw (untokenized) sequence data, use `data.text_column` (default
@@ -162,6 +163,28 @@ Each YAML file has these sections: `run`, `data`, `tokenizer`, `model`, `peft`,
 `training`, `checkpointing`, `wandb`. The `training` section is forwarded
 verbatim to `transformers.TrainingArguments`; everything else is validated by
 `barca.config` so typos fail fast. Unknown keys raise an error.
+
+### Selective token training
+
+To fine-tune **only** the new protein-token embeddings and leave every other
+weight (including the rest of the vocabulary embeddings) frozen, set one of the
+`model.trainable_*` options:
+
+```yaml
+model:
+  trainable_token_range: [248077, 248098]   # inclusive token-id range
+  # or: trainable_tokens: ["<protein>", "</protein>", "ζA", ...]
+  # or: trainable_token_ids: [248077, 248078, ...]
+```
+
+All parameters are frozen and only the selected rows of the input embedding
+(and the tied `lm_head`) are trained; gradients for every other row are masked,
+so the pretrained embedding rows never move. `weight_decay` is forced to `0`
+for this mode (decoupled decay would otherwise shrink the frozen rows).
+
+`barca-0.8b-base` is Qwen3.5 with 22 added protein tokens at ids
+**248077–248098**: the 20 ζ-prefixed amino acids (`ζA`…`ζY`) plus
+`<protein>` and `</protein>`.
 
 ### Checkpoint policy
 

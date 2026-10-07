@@ -10,9 +10,10 @@ SSH_PORT   = 2224
 SSH_USER   = kabidi
 REMOTE_DIR = /home/kabidi/workspace/projects/barca
 REMOTE_PY  = /opt/miniconda3/bin/python
-DATA       = /home/kabidi/workspace/datasets/uniref50/barca
+DATA       = /home/kabidi/workspace/datasets/uniref50/barca_5m
 
 RECIPE     = configs/lora.yaml
+SMOKE_RECIPE = configs/full_ft_smoke.yaml
 NUM_GPUS   = 1
 
 REMOTE_RUN_DIR = outputs/barca-0.8b-lora
