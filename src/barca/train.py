@@ -41,7 +41,21 @@ def parse_args(argv: Optional[list] = None) -> argparse.Namespace:
     parser.add_argument("--learning_rate", type=float, default=None)
     parser.add_argument("--max_train_samples", type=int, default=None)
     parser.add_argument("--max_eval_samples", type=int, default=None)
+    # Arbitrary TrainingArguments override, e.g. --set gradient_checkpointing=false
+    parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
     return parser.parse_args(argv)
+
+
+def _coerce(value: str):
+    low = value.lower()
+    if low in ("true", "false"):
+        return low == "true"
+    for cast in (int, float):
+        try:
+            return cast(value)
+        except ValueError:
+            continue
+    return value
 
 
 def apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
@@ -68,6 +82,11 @@ def apply_overrides(cfg: Config, args: argparse.Namespace) -> Config:
         cfg.data.max_train_samples = args.max_train_samples
     if args.max_eval_samples is not None:
         cfg.data.max_eval_samples = args.max_eval_samples
+    for item in args.set:
+        key, sep, raw = item.partition("=")
+        if not sep:
+            raise ValueError(f"--set expects KEY=VALUE, got {item!r}")
+        cfg.training[key.strip()] = _coerce(raw)
     return cfg
 
 
