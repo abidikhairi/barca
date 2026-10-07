@@ -131,3 +131,76 @@ class WandbConfigCallback(TrainerCallback):
                 except Exception as exc:  # pragma: no cover - non-fatal
                     LOGGER.warning("wandb.watch failed: %s", exc)
         return control
+
+
+class RestoreFrozenEmbeddingRowsCallback(TrainerCallback):
+    """Keep non-selected embedding rows exactly frozen.
+
+    Gradient masking already zeroes their gradients, but decoupled weight decay
+    (AdamW) would still shrink every row. After each optimizer step we restore
+    the frozen rows from a snapshot, so only the selected token rows move.
+    """
+
+    def __init__(self, model) -> None:
+        state = getattr(model, "_barca_selective_state", None)
+        self._entries = list(state["snapshots"]) if state else []
+
+    def _restore(self) -> None:
+        if not self._entries:
+            return
+        import torch
+
+        with torch.no_grad():
+            for weight, snapshot, token_ids in self._entries:
+                keep = torch.zeros(weight.shape[0], dtype=torch.bool, device=weight.device)
+                keep[torch.as_tensor(token_ids, device=weight.device)] = True
+                frozen = ~keep
+                weight.data[frozen] = snapshot.to(weight.device, weight.dtype)[frozen]
+
+    def on_optimizer_step(self, args, state, control, **kwargs):
+        self._restore()
+        return control
+
+    def on_step_end(self, args, state, control, **kwargs):
+        self._restore()
+        return control
+
+
+class TokenStatsCallback(TrainerCallback):
+    """Log the number of training tokens seen (and the total budget)."""
+
+    def __init__(self, seq_len: int, per_device_batch: int, grad_accum: int, train_size: int) -> None:
+        self.tokens_per_step = max(1, per_device_batch) * max(1, grad_accum) * seq_len
+        self.total_tokens = train_size * seq_len
+        self.train_size = train_size
+        self.seq_len = seq_len
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        world = getattr(args, "world_size", 1) or 1
+        self.tokens_per_step *= max(1, world)
+        LOGGER.info(
+            "Token budget: %s sequences x %d tokens = %s tokens; %s tokens per optimizer step.",
+            f"{self.train_size:,}",
+            self.seq_len,
+            f"{self.total_tokens:,}",
+            f"{self.tokens_per_step:,}",
+        )
+        self._log_wandb({"train/total_tokens": self.total_tokens}, step=state.global_step)
+        return control
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        seen = getattr(state, "num_input_tokens_seen", None)
+        if seen is None:
+            seen = state.global_step * self.tokens_per_step
+        self._log_wandb({"train/tokens_seen": seen}, step=state.global_step)
+        return control
+
+    @staticmethod
+    def _log_wandb(payload: dict, step: int) -> None:
+        try:
+            import wandb
+
+            if wandb.run is not None:
+                wandb.log(payload, step=step)
+        except Exception:  # pragma: no cover - logging must never break training
+            pass

@@ -186,15 +186,12 @@ def build_training_arguments(cfg: Config, has_eval: bool = True, selective: bool
     if warmup_ratio is not None and "warmup_ratio" in sig:
         training["warmup_ratio"] = warmup_ratio
 
-    # Selective token training: the optimizer only holds the shared embedding
-    # matrix, so decay would shrink every row, including the frozen ones.
+    # Log the number of input tokens the model has seen (built-in Trainer counter).
+    training.setdefault("include_num_input_tokens_seen", True)
+
     if selective:
-        if training.get("weight_decay", 0.0):
-            LOGGER.warning(
-                "Selective token training: forcing weight_decay=0 so frozen embedding "
-                "rows are not decayed."
-            )
-        training["weight_decay"] = 0.0
+        # Frozen embedding rows are protected by RestoreFrozenEmbeddingRowsCallback.
+        LOGGER.info("Selective token training: frozen embedding rows will be restored after each step.")
 
     args = TrainingArguments(**training)
 
@@ -293,7 +290,12 @@ def main(argv: Optional[list] = None) -> None:
         cfg, has_eval=has_eval, selective=cfg.model.selective_token_training
     )
 
-    from .callbacks import TopKCheckpointCallback, WandbConfigCallback
+    from .callbacks import (
+        RestoreFrozenEmbeddingRowsCallback,
+        TokenStatsCallback,
+        TopKCheckpointCallback,
+        WandbConfigCallback,
+    )
 
     topk_callback = TopKCheckpointCallback(
         metric=cfg.checkpointing.metric,
@@ -308,6 +310,16 @@ def main(argv: Optional[list] = None) -> None:
             watch=cfg.wandb.watch,
         ),
     ]
+    if cfg.model.selective_token_training:
+        callbacks.append(RestoreFrozenEmbeddingRowsCallback(model))
+    callbacks.append(
+        TokenStatsCallback(
+            seq_len=cfg.data.max_seq_length,
+            per_device_batch=training_args.per_device_train_batch_size,
+            grad_accum=training_args.gradient_accumulation_steps,
+            train_size=len(datasets["train"]),
+        )
+    )
 
     trainer = Trainer(
         model=model,

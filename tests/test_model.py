@@ -95,3 +95,32 @@ def test_untied_lm_head_rows_are_trainable():
     assert model.embed.weight.grad[0].abs().sum() == 0
     assert model.lm_head.weight.grad[4].abs().sum() > 0
     assert model.lm_head.weight.grad[1].abs().sum() == 0
+
+
+def test_restore_frozen_rows_after_weight_decay():
+    from types import SimpleNamespace
+
+    from barca.callbacks import RestoreFrozenEmbeddingRowsCallback
+
+    model = TinyLM(vocab=20, hidden=4, tied=True)
+    freeze_for_token_training(model, [3, 5, 7])
+    before = model.embed.weight.detach().clone()
+
+    # Simulate decoupled weight decay touching every row.
+    with torch.no_grad():
+        model.embed.weight.mul_(0.9)
+
+    cb = RestoreFrozenEmbeddingRowsCallback(model)
+    cb.on_optimizer_step(SimpleNamespace(), SimpleNamespace(global_step=1), None)
+
+    after = model.embed.weight.detach()
+    assert torch.allclose(after[0], before[0])  # frozen row restored
+    assert not torch.allclose(after[3], before[3])  # selected row decayed
+
+
+def test_token_stats_totals():
+    from barca.callbacks import TokenStatsCallback
+
+    cb = TokenStatsCallback(seq_len=515, per_device_batch=48, grad_accum=4, train_size=1000)
+    assert cb.total_tokens == 1000 * 515
+    assert cb.tokens_per_step == 48 * 4 * 515

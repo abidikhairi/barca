@@ -153,6 +153,12 @@ def freeze_for_token_training(model, token_ids: list) -> None:
         weight.requires_grad_(True)
         _mask_embedding_gradients(weight, token_ids)
 
+    # Snapshot the full embedding so a trainer callback can restore the frozen
+    # rows after each optimizer step (decoupled weight decay would otherwise
+    # shrink every row, not just the selected ones).
+    snapshots = [(weight, weight.detach().clone(), tuple(token_ids)) for weight in weights]
+    model._barca_selective_state = {"token_ids": token_ids, "snapshots": snapshots}
+
     _log_selective(model, token_ids)
 
 
