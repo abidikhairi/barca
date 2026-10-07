@@ -44,9 +44,17 @@ def parse_args() -> argparse.Namespace:
         choices=["bfloat16", "float16", "float32", "auto"],
         help="Compute dtype for loading the model.",
     )
-    parser.add_argument("--max-new-tokens", type=int, default=48)
-    parser.add_argument("--temperature", type=float, default=0.8, help="0 => greedy decoding.")
+    parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument(
+        "--do-sample",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Sample (default) or use greedy decoding.",
+    )
+    parser.add_argument("--temperature", type=float, default=0.7, help="Used when sampling.")
     parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument("--top-k", type=int, default=250)
+    parser.add_argument("--repetition-penalty", type=float, default=1.3)
     parser.add_argument("--num-samples", type=int, default=1, help="Samples per prompt.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
@@ -105,14 +113,15 @@ def main() -> None:
 
     for prompt in prompts:
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
-        do_sample = args.temperature > 0
         with torch.no_grad():
             output = model.generate(
                 **inputs,
                 max_new_tokens=args.max_new_tokens,
-                do_sample=do_sample,
-                temperature=args.temperature if do_sample else None,
-                top_p=args.top_p if do_sample else None,
+                do_sample=args.do_sample,
+                temperature=args.temperature if args.do_sample else None,
+                top_p=args.top_p if args.do_sample else None,
+                top_k=args.top_k if args.do_sample else None,
+                repetition_penalty=args.repetition_penalty,
                 num_return_sequences=args.num_samples,
                 pad_token_id=tokenizer.pad_token_id,
             )
