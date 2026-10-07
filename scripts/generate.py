@@ -10,6 +10,10 @@ Usage:
     python scripts/generate.py outputs/barca-0.8b-full-ft/checkpoint-500
     python scripts/generate.py /path/to/model --device cpu --dtype float32
     python scripts/generate.py khairi/barca-0.8b-base --prompts "Once upon a time" "<protein>"
+
+Note: the Barca model uses FLA Triton kernels for its linear-attention
+layers, so generation must run on CUDA. Running with --device cpu fails with
+"Pointer argument ... cannot be accessed from Triton (cpu tensor?)".
 """
 
 from __future__ import annotations
