@@ -49,7 +49,7 @@ def parse_args() -> argparse.Namespace:
         choices=["bfloat16", "float16", "float32", "auto"],
         help="Compute dtype for loading the model.",
     )
-    parser.add_argument("--max-new-tokens", type=int, default=64)
+    parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument(
         "--do-sample", action=argparse.BooleanOptionalAction, default=True,
         help="Sample (default) or use greedy decoding.",
