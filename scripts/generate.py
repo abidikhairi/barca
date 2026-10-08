@@ -86,8 +86,9 @@ def load_model(model_id: str, dtype: Optional[torch.dtype], device: str):
         key = "dtype" if Version(transformers.__version__) >= Version("4.56.0") else "torch_dtype"
         kwargs[key] = dtype
     model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
-    if device != "auto":
-        model = model.to(device)
+    if device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    model = model.to(device)
     model.eval()
     return model
 
