@@ -76,6 +76,10 @@ def parse_args() -> argparse.Namespace:
         "--probe-base", default="khairi/barca-0.8b-base",
         help="Reference model for --probe ('' to skip the comparison).",
     )
+    parser.add_argument(
+        "--probe-models", nargs="*", default=[],
+        help="Additional checkpoints to include in the --probe comparison table.",
+    )
     return parser.parse_args()
 
 
@@ -143,15 +147,17 @@ def run_probe(args, tokenizer, dtype, device) -> None:
     prompts = args.prompts if args.prompts else PROBE_PROMPTS
     protein_ids = protein_token_ids(tokenizer)
 
+    model_ids = []
+    for model_id in [args.probe_base, *args.probe_models, args.model]:
+        if model_id and model_id not in model_ids:
+            model_ids.append(model_id)
+
     tables = {}
-    if args.probe_base:
-        base = load_model(args.probe_base, dtype, device)
-        tables[args.probe_base] = next_token_probe(base, tokenizer, protein_ids, prompts)
-        del base
+    for model_id in model_ids:
+        model = load_model(model_id, dtype, device)
+        tables[model_id] = next_token_probe(model, tokenizer, protein_ids, prompts)
+        del model
         torch.cuda.empty_cache()
-    target = load_model(args.model, dtype, device)
-    tables[args.model] = next_token_probe(target, tokenizer, protein_ids, prompts)
-    del target
 
     print("=" * 100)
     print("Next-token diagnostics after the prompt (lower rank = closer to emitting protein)")
