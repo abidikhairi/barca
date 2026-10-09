@@ -26,6 +26,10 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("models", nargs="+", help="Checkpoint paths or HF repo ids.")
     parser.add_argument("--num-samples", type=int, default=10, help="Sequences per checkpoint.")
+    parser.add_argument(
+        "--batch-size", type=int, default=5,
+        help="Sequences generated at once (kept small to fit alongside training).",
+    )
     parser.add_argument("--output", default="proteins.fasta", help="FASTA output path.")
     parser.add_argument("--prompt", default="<protein>", help="Generation prompt.")
     parser.add_argument("--max-new-tokens", type=int, default=512)
@@ -60,26 +64,28 @@ def generate(args) -> List[tuple]:
         name = os.path.basename(model_id.rstrip("/")) or model_id
         print(f"generating {args.num_samples} from {model_id}", flush=True)
         model = load_model(model_id)
-        torch.manual_seed(args.seed)
         inputs = tokenizer(args.prompt, return_tensors="pt").to(model.device)
-        with torch.no_grad():
-            output = model.generate(
-                **inputs,
-                max_new_tokens=args.max_new_tokens,
-                do_sample=True,
-                temperature=args.temperature,
-                top_p=args.top_p,
-                top_k=args.top_k,
-                repetition_penalty=args.repetition_penalty,
-                num_return_sequences=args.num_samples,
-                eos_token_id=[tokenizer.eos_token_id, close_id],
-                pad_token_id=tokenizer.pad_token_id,
-            )
-        for i, seq in enumerate(output):
-            residues = strip_protein(
-                tokenizer.decode(seq, skip_special_tokens=True)
-            )
-            records.append((f"{name}_sample{i}", residues))
+        done = 0
+        while done < args.num_samples:
+            chunk = min(args.batch_size, args.num_samples - done)
+            torch.manual_seed(args.seed + done)
+            with torch.no_grad():
+                output = model.generate(
+                    **inputs,
+                    max_new_tokens=args.max_new_tokens,
+                    do_sample=True,
+                    temperature=args.temperature,
+                    top_p=args.top_p,
+                    top_k=args.top_k,
+                    repetition_penalty=args.repetition_penalty,
+                    num_return_sequences=chunk,
+                    eos_token_id=[tokenizer.eos_token_id, close_id],
+                    pad_token_id=tokenizer.pad_token_id,
+                )
+            for j, seq in enumerate(output):
+                residues = strip_protein(tokenizer.decode(seq, skip_special_tokens=True))
+                records.append((f"{name}_sample{done + j}", residues))
+            done += chunk
         del model
         torch.cuda.empty_cache()
     return records
