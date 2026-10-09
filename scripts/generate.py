@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.7, help="Used when sampling.")
     parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--top-k", type=int, default=250)
-    parser.add_argument("--repetition-penalty", type=float, default=1.3)
+    parser.add_argument("--repetition-penalty", type=float, default=1.1)
     parser.add_argument("--num-samples", type=int, default=1, help="Samples per prompt.")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument(
