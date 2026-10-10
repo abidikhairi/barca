@@ -31,7 +31,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-len", type=int, default=400, help="Skip sequences longer than this.")
     parser.add_argument("--timeout", type=float, default=300.0, help="Per-request timeout (s).")
     parser.add_argument("--sleep", type=float, default=1.0, help="Pause between requests (s).")
-    parser.add_argument("--retries", type=int, default=2)
+    parser.add_argument("--retries", type=int, default=5)
+    parser.add_argument(
+        "--resume", action=argparse.BooleanOptionalAction, default=True,
+        help="Reuse PDBs already present in --out-dir instead of refolding.",
+    )
     return parser.parse_args()
 
 
@@ -66,10 +70,10 @@ def fold(seq: str, api: str, timeout: float, retries: int) -> str:
             last_exc = exc
             if exc.code == 413:  # too long -> no point retrying
                 raise
-            time.sleep(2 * (attempt + 1))
+            time.sleep(min(30, 5 * (attempt + 1)))
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
-            time.sleep(2 * (attempt + 1))
+            time.sleep(min(30, 5 * (attempt + 1)))
     raise last_exc  # type: ignore[misc]
 
 
@@ -98,10 +102,20 @@ def main() -> None:
             skipped[group] += 1
             print(f"skip {header} (len {len(seq)} > {args.max_len})", flush=True)
             continue
+        pdb_path = os.path.join(args.out_dir, f"{header}.pdb")
+        if args.resume and os.path.exists(pdb_path):
+            try:
+                plddt = mean_plddt(open(pdb_path, encoding="utf-8").read())
+                per_group[group].append(plddt)
+                rows.append((header, len(seq), plddt, "cached"))
+                print(f"{header} len={len(seq)} pLDDT={plddt:.4f} (cached)", flush=True)
+                continue
+            except Exception:  # noqa: BLE001 - refold if the cached file is bad
+                pass
         try:
             pdb = fold(seq, args.api, args.timeout, args.retries)
             plddt = mean_plddt(pdb)
-            with open(os.path.join(args.out_dir, f"{header}.pdb"), "w", encoding="utf-8") as fh:
+            with open(pdb_path, "w", encoding="utf-8") as fh:
                 fh.write(pdb)
             per_group[group].append(plddt)
             rows.append((header, len(seq), plddt, "ok"))
