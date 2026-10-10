@@ -37,7 +37,8 @@ peft:
   r: 16
   alpha: 32
   dropout: 0.05
-  # Qwen3.5 hybrid: self-attention + MLP + GatedDeltaNet (linear_attn) projections.
+  # Qwen3.5 hybrid: self-attention + MLP. (The GatedDeltaNet linear_attn
+  # projections are excluded -- wrapping them disables the FLA fast kernel.)
   target_modules:
     - q_proj
     - k_proj
@@ -46,11 +47,6 @@ peft:
     - gate_proj
     - up_proj
     - down_proj
-    - in_proj_qkv
-    - in_proj_z
-    - in_proj_b
-    - in_proj_a
-    - out_proj
   bias: none
   use_rslora: false
 
