@@ -148,6 +148,12 @@ def test_explicit_tokenized_without_input_ids_raises(tmp_path):
         raise AssertionError("expected ValueError")
 
 
+def test_sample_cap_with_shuffle(tmp_path):
+    cfg = _cfg(_make_dataset(tmp_path), max_train_samples=3, shuffle_samples=True)
+    datasets = build_tokenized_datasets(cfg, FakeTokenizer())
+    assert len(datasets["train"]) == 3
+
+
 def test_mixed_splits_tokenized_train_raw_eval(tmp_path):
     """train is pre-tokenized, valid is raw text -> eval must be tokenized."""
     root = tmp_path / "mixed"

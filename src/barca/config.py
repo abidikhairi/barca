@@ -72,6 +72,9 @@ class DataConfig:
     # Cap on examples for quick smoke runs (None => all).
     max_train_samples: Optional[int] = None
     max_eval_samples: Optional[int] = None
+    # When a *_samples cap is set, shuffle (seeded) before selecting so the cap
+    # is a random sample rather than the first N examples.
+    shuffle_samples: bool = False
 
     def __post_init__(self) -> None:
         if self.path is None and self.tokenized_path is None:

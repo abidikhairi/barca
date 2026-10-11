@@ -267,7 +267,11 @@ def build_tokenized_datasets(
 def _maybe_cap(dataset: Dataset, cfg: Config, split: str) -> Dataset:
     limit = cfg.data.max_train_samples if split == "train" else cfg.data.max_eval_samples
     if limit is not None and len(dataset) > limit:
-        LOGGER.info("Capping %s split to %d examples.", split, limit)
+        if cfg.data.shuffle_samples:
+            dataset = dataset.shuffle(seed=cfg.run.seed)
+            LOGGER.info("Randomly sampling %d examples for %s split.", limit, split)
+        else:
+            LOGGER.info("Capping %s split to the first %d examples.", split, limit)
         return dataset.select(range(limit))
     return dataset
 
