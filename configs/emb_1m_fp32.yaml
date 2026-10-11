@@ -1,0 +1,84 @@
+# Embedding-only fine-tune (protein tokens, trained from scratch), float32.
+# Only the new protein-token rows are trainable; the transformer is frozen.
+# Random 1M subset, lr 1e-3 cosine + 5% warmup, checkpoint every 250 steps.
+#
+#   python -m barca.train --config configs/emb_1m_fp32.yaml
+
+run:
+  name: barca-0.8b-emb-1m-fp32
+  output_dir: outputs/barca-0.8b-emb-1m-fp32
+  seed: 42
+  description: Protein-token embedding fine-tune (fp32) on a random 1M subset.
+
+data:
+  path: /home/kabidi/workspace/datasets/uniref50/barca_5m
+  train_split: train
+  eval_split: valid
+  test_split: null
+  text_column: text
+  max_seq_length: 515
+  packing: false
+  packing_add_eos: true
+  tokenized: null
+  shuffle_samples: true
+  max_train_samples: 1000000
+  max_eval_samples: 2000
+  eval_fraction: 0.0
+  test_fraction: 0.0
+  num_proc: 8
+
+tokenizer:
+  name_or_path: khairi/barca-0.8b-base
+  trust_remote_code: true
+  use_fast: true
+
+model:
+  name_or_path: khairi/barca-0.8b-base
+  trust_remote_code: true
+  dtype: float32
+  attn_implementation: sdpa
+  gradient_checkpointing: true
+  # Only the 22 protein tokens (20 zeta residues + <protein> + </protein>).
+  trainable_token_range: [248077, 248098]
+
+peft:
+  enabled: false
+
+training:
+  per_device_train_batch_size: 48
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 4
+  learning_rate: 1.0e-3
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.05
+  weight_decay: 0.1
+  num_train_epochs: 1
+  max_steps: -1
+  logging_steps: 50
+  eval_strategy: steps
+  eval_steps: 250
+  save_strategy: steps
+  save_steps: 250
+  bf16: false
+  fp16: false
+  optim: adamw_torch
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 4
+  report_to: [wandb]
+
+checkpointing:
+  top_k: 3
+  metric: eval_loss
+  greater_is_better: false
+  keep_last: false
+
+wandb:
+  enabled: true
+  project: Barca
+  entity: null
+  tags: [embedding-only, fp32, protein, barca-0.8b, 1m]
+  notes: Protein-token embedding fine-tune (fp32), random 1M subset, lr 1e-3 cosine +5% warmup.
+  log_config: true
+  watch: "false"
