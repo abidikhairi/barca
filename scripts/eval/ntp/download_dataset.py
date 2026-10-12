@@ -3,6 +3,7 @@
 
 HF Dataset: HuggingFaceTB/cosmopedia
 Task: from each subset save 10 rows to a CSV file with the following columns: 'text'
+(plus a 'subset' column naming the Cosmopedia subset, so evaluate.py can report per subset)
 
 Subsets are streamed, so only the first rows of each are fetched rather than the
 full dataset.
@@ -43,12 +44,12 @@ def main() -> None:
     total = 0
     with out.open("w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["text"])
+        writer.writerow(["text", "subset"])
         for subset in subsets:
             stream = load_dataset(args.dataset, subset, split=args.split, streaming=True)
             n = 0
             for row in stream:
-                writer.writerow([row["text"]])
+                writer.writerow([row["text"], subset])
                 n += 1
                 if n >= args.rows_per_subset:
                     break
