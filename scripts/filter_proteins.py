@@ -33,15 +33,20 @@ def parse_args() -> argparse.Namespace:
 
 
 def read_fasta(path: str) -> List[Tuple[str, str]]:
-    records, header = [], None
+    """Read FASTA, joining wrapped/multi-line sequence data into one string."""
+    records: List[Tuple[str, str]] = []
+    header = None
+    buf: List[str] = []
     for line in open(path, encoding="utf-8"):
-        line = line.strip()
-        if not line:
-            continue
         if line.startswith(">"):
-            header = line[1:]
+            if header is not None:
+                records.append((header, "".join(buf)))
+            header = line[1:].strip()
+            buf = []
         else:
-            records.append((header, line))
+            buf.append(line.strip())
+    if header is not None:
+        records.append((header, "".join(buf)))
     return records
 
 
