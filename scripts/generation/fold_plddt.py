@@ -7,7 +7,7 @@ CA B-factor column, and prints the mean pLDDT per group (checkpoint) plus per
 sequence. PDBs and a summary are written to --out-dir.
 
 Usage:
-    python scripts/fold_plddt.py /tmp/proteins.fasta --out-dir /tmp/pdbs
+    python scripts/generation/fold_plddt.py /tmp/proteins.fasta --out-dir /tmp/pdbs
 """
 
 from __future__ import annotations

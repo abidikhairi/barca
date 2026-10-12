@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 
 from barca.config import Config
-from barca.model import freeze_for_token_training, resolve_trainable_token_ids
+from barca.modeling import freeze_for_token_training, resolve_trainable_token_ids
 
 
 class TinyLM(nn.Module):
@@ -100,7 +100,7 @@ def test_untied_lm_head_rows_are_trainable():
 def test_restore_frozen_rows_after_weight_decay():
     from types import SimpleNamespace
 
-    from barca.callbacks import RestoreFrozenEmbeddingRowsCallback
+    from barca.training.callbacks import RestoreFrozenEmbeddingRowsCallback
 
     model = TinyLM(vocab=20, hidden=4, tied=True)
     freeze_for_token_training(model, [3, 5, 7])
@@ -119,7 +119,7 @@ def test_restore_frozen_rows_after_weight_decay():
 
 
 def test_token_stats_totals():
-    from barca.callbacks import TokenStatsCallback
+    from barca.training.callbacks import TokenStatsCallback
 
     cb = TokenStatsCallback(seq_len=515, per_device_batch=48, grad_accum=4, train_size=1000)
     assert cb.total_tokens == 1000 * 515

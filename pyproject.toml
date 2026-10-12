@@ -30,7 +30,7 @@ flash = ["flash-attn>=2.5"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 
 [project.scripts]
-barca-train = "barca.train:main"
+barca-train = "barca.training.run:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

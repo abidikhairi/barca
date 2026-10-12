@@ -9,7 +9,7 @@ Point a recipe at the result with ``data.tokenized_path`` to skip on-the-fly
 tokenization during training.
 
 Usage:
-    python scripts/preprocess.py --config configs/lora.yaml --output /data/proteins/tokenized
+    python scripts/data/preprocess.py --config configs/lora.yaml --output /data/proteins/tokenized
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ import argparse
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "src"))
 
 from barca.config import Config  # noqa: E402
 from barca.data import preprocess_and_save  # noqa: E402
-from barca.model import load_tokenizer  # noqa: E402
+from barca.modeling import load_tokenizer  # noqa: E402
 from barca.utils import setup_logging  # noqa: E402
 
 

@@ -8,7 +8,7 @@ Keeps sequences that are plausible proteins and foldable by the ESMFold API:
   * no homopolymer run longer than --max-run.
 
 Usage:
-    python scripts/filter_proteins.py in.fasta out.fasta
+    python scripts/generation/filter_proteins.py in.fasta out.fasta
 """
 
 from __future__ import annotations

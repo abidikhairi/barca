@@ -42,7 +42,7 @@ class DataConfig:
 
     # Path passed to ``datasets.load_from_disk``.
     path: Optional[str] = None
-    # If set, load an already-tokenized dataset (output of scripts/preprocess.py)
+    # If set, load an already-tokenized dataset (output of scripts/data/preprocess.py)
     # instead of tokenizing ``path`` on the fly.
     tokenized_path: Optional[str] = None
 

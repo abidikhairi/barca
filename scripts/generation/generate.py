@@ -8,10 +8,10 @@ Loads any Barca-family checkpoint (HF repo id or local path) and either:
     tracked while training runs.
 
 Usage:
-    python scripts/generate.py khairi/barca-0.8b-base
-    python scripts/generate.py outputs/barca-0.8b-full-ft/checkpoint-500
-    python scripts/generate.py outputs/barca-0.8b-full-ft/checkpoint-500 --probe
-    python scripts/generate.py MODEL --prompts "Once upon a time" "<protein>ζM"
+    python scripts/generation/generate.py khairi/barca-0.8b-base
+    python scripts/generation/generate.py outputs/barca-0.8b-full-ft/checkpoint-500
+    python scripts/generation/generate.py outputs/barca-0.8b-full-ft/checkpoint-500 --probe
+    python scripts/generation/generate.py MODEL --prompts "Once upon a time" "<protein>ζM"
 
 Note: the Barca model uses FLA Triton kernels for its linear-attention
 layers, so generation/probing must run on CUDA. Running with --device cpu

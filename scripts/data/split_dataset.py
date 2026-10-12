@@ -5,7 +5,7 @@ Useful when the source dataset is a single ``Dataset`` (or a ``DatasetDict``
 whose splits you want to re-derive).
 
 Usage:
-    python scripts/split_dataset.py /data/proteins/raw \
+    python scripts/data/split_dataset.py /data/proteins/raw \
         --output /data/proteins/processed \
         --eval-fraction 0.02 --test-fraction 0.02 --seed 42
 """

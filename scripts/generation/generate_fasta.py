@@ -6,7 +6,7 @@ append them to a single FASTA file, with a header identifying the checkpoint,
 sample index and length.
 
 Usage:
-    python scripts/generate_fasta.py outputs/barca-0.8b-full-ft/checkpoint-* \
+    python scripts/generation/generate_fasta.py outputs/barca-0.8b-full-ft/checkpoint-* \
         --num-samples 10 --output proteins.fasta
 
 Note: the Barca model needs CUDA (FLA Triton kernels).

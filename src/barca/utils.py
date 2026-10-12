@@ -86,3 +86,16 @@ def ensure_dir(path: str | Path) -> Path:
     path = Path(path)
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def log_trainable_parameters(model, label: str) -> None:
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    pct = 100.0 * trainable / total if total else 0.0
+    LOGGER.info(
+        "Model ready (%s): %s trainable / %s total params (%.2f%%)",
+        label,
+        f"{trainable:,}",
+        f"{total:,}",
+        pct,
+    )

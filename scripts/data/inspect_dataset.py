@@ -11,8 +11,8 @@ pre-tokenized data the ``input_ids`` lengths are reported instead of raw
 sequence lengths.
 
 Usage:
-    python scripts/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca
-    python scripts/inspect_dataset.py /data/raw --column sequence --tokenizer khairi/barca-0.8b-base
+    python scripts/data/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca
+    python scripts/data/inspect_dataset.py /data/raw --column sequence --tokenizer khairi/barca-0.8b-base
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from __future__ import annotations
 import argparse
 import statistics
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict
 
 from datasets import Dataset, DatasetDict, load_from_disk
 

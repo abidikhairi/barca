@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from barca.callbacks import TopKCheckpointCallback
+from barca.training.callbacks import TopKCheckpointCallback
 
 
 def _args(tmp_path):

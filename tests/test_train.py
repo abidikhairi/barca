@@ -1,11 +1,11 @@
-"""Tests for CLI overrides in barca.train."""
+"""Tests for CLI overrides in barca.training."""
 
 from __future__ import annotations
 
 from types import SimpleNamespace
 
 from barca.config import Config
-from barca.train import _coerce, apply_overrides
+from barca.training.cli import _coerce, apply_overrides
 
 
 def _args(**overrides):

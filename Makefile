@@ -54,16 +54,16 @@ sync:
 		$(SSH_USER)@$(SSH_HOST):$(REMOTE_DIR)/
 
 train:
-	$(SSH) 'cd $(REMOTE_DIR) && PYTHON=$(REMOTE_PY) NUM_GPUS=$(NUM_GPUS) bash scripts/train.sh $(RECIPE) $(EXTRA_ARGS)'
+	$(SSH) 'cd $(REMOTE_DIR) && PYTHON=$(REMOTE_PY) NUM_GPUS=$(NUM_GPUS) bash scripts/training/train.sh $(RECIPE) $(EXTRA_ARGS)'
 
 # Alias kept for parity with the sibling project's workflow.
 finetune: train
 
 smoke:
-	$(SSH) 'cd $(REMOTE_DIR) && PYTHON=$(REMOTE_PY) NUM_GPUS=$(NUM_GPUS) bash scripts/train.sh $(SMOKE_RECIPE) $(EXTRA_ARGS)'
+	$(SSH) 'cd $(REMOTE_DIR) && PYTHON=$(REMOTE_PY) NUM_GPUS=$(NUM_GPUS) bash scripts/training/train.sh $(SMOKE_RECIPE) $(EXTRA_ARGS)'
 
 inspect:
-	$(SSH) 'cd $(REMOTE_DIR) && PYTHONPATH=src $(REMOTE_PY) scripts/inspect_dataset.py $(DATA)'
+	$(SSH) 'cd $(REMOTE_DIR) && PYTHONPATH=src $(REMOTE_PY) scripts/data/inspect_dataset.py $(DATA)'
 
 # `make pull checkpoint-1000`. Make treats every word of the goal list as a
 # target, so the checkpoint name is lifted out of MAKECMDGOALS here, and the

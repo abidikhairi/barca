@@ -8,7 +8,7 @@ from typing import List, Optional, Tuple
 
 from transformers import TrainerCallback
 
-from .utils import LOGGER
+from ..utils import LOGGER
 
 
 class TopKCheckpointCallback(TrainerCallback):

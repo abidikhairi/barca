@@ -19,7 +19,7 @@ wandb/
 *.ckpt
 
 # Data (never commit datasets)
-data/
+/data/
 *.arrow
 dataset_info.json
 state.json

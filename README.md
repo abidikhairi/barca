@@ -33,19 +33,25 @@ barca/
 │   ├── full_ft.yaml
 │   ├── lora.yaml
 │   └── qlora.yaml
-├── scripts/                  # CLI utilities and launch helpers
-│   ├── inspect_dataset.py    # dataset schema + sequence-length stats
-│   ├── split_dataset.py      # (re)build train/validation/test splits
-│   ├── preprocess.py         # tokenize/pack offline -> DatasetDict
-│   ├── train.sh
-│   └── preprocess.sh
+├── scripts/
+│   ├── training/
+│   │   └── train.sh          # launch (single GPU / torchrun)
+│   ├── data/
+│   │   ├── inspect_dataset.py  # dataset schema + sequence-length stats
+│   │   ├── split_dataset.py    # (re)build train/validation/test splits
+│   │   ├── preprocess.py       # tokenize/pack offline -> DatasetDict
+│   │   └── preprocess.sh
+│   └── generation/
+│       ├── generate.py         # prompt continuation / --probe diagnostics
+│       ├── generate_fasta.py   # sample sequences from checkpoints
+│       ├── filter_proteins.py  # keep valid/foldable sequences
+│       └── fold_plddt.py       # ESMFold + mean pLDDT
 ├── src/barca/
 │   ├── config.py             # typed recipe parsing
-│   ├── data.py               # loading, splitting, tokenization, packing
-│   ├── model.py              # tokenizer/model loading + PEFT
-│   ├── callbacks.py          # top-k checkpoint callback, W&B config logging
-│   ├── train.py              # training entry point
-│   └── utils.py              # seeding, dtype, logging helpers
+│   ├── utils.py              # seeding, dtype, logging helpers
+│   ├── data/                 # loading.py (splits), processing.py (tokenize/pack)
+│   ├── modeling/             # loading.py, peft.py, tokens.py (selective token training)
+│   └── training/             # run.py (entry), cli.py, arguments.py, callbacks.py
 └── tests/                    # unit tests (config + checkpoint callback)
 ```
 
@@ -64,7 +70,7 @@ pip install -e ".[flash]"   # + flash-attention (optional)
 ```
 
 No install is required either: the launch scripts prepend `src/` to
-`PYTHONPATH`, so `python -m barca.train ...` works from a fresh checkout.
+`PYTHONPATH`, so `python -m barca.training ...` works from a fresh checkout.
 
 ---
 
@@ -112,7 +118,7 @@ require pre-tokenized splits, `false` to force tokenization, or leave it `null`
 Inspect a dataset before training:
 
 ```bash
-python scripts/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca_5m
+python scripts/data/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca_5m
 ```
 
 For raw (untokenized) sequence data, use `data.text_column` (default
@@ -120,12 +126,12 @@ For raw (untokenized) sequence data, use `data.text_column` (default
 recipe via `data.tokenized_path`:
 
 ```bash
-python scripts/inspect_dataset.py /data/proteins/raw \
+python scripts/data/inspect_dataset.py /data/proteins/raw \
     --column sequence --tokenizer khairi/barca-0.8b-base
-python scripts/split_dataset.py /data/proteins/raw \
+python scripts/data/split_dataset.py /data/proteins/raw \
     --output /data/proteins/processed \
     --eval-fraction 0.02 --test-fraction 0.02 --seed 42
-./scripts/preprocess.sh configs/lora.yaml --output /data/proteins/tokenized
+./scripts/data/preprocess.sh configs/lora.yaml --output /data/proteins/tokenized
 ```
 
 ---
@@ -138,29 +144,29 @@ python scripts/split_dataset.py /data/proteins/raw \
 
 ```bash
 # Single GPU
-./scripts/train.sh configs/lora.yaml
+./scripts/training/train.sh configs/lora.yaml
 
 # Override output directory / run name, disable W&B
-./scripts/train.sh configs/full_ft.yaml \
+./scripts/training/train.sh configs/full_ft.yaml \
     --output_dir runs/barca-full-ft-1 --run_name barca-full-ft-1 --no_wandb
 
 # Multi-GPU
-NUM_GPUS=4 ./scripts/train.sh configs/qlora.yaml
+NUM_GPUS=4 ./scripts/training/train.sh configs/qlora.yaml
 
 # Resume
-./scripts/train.sh configs/lora.yaml --resume_from_checkpoint outputs/barca-0.8b-lora/checkpoint-800
+./scripts/training/train.sh configs/lora.yaml --resume_from_checkpoint outputs/barca-0.8b-lora/checkpoint-800
 ```
 
 Equivalent direct invocation:
 
 ```bash
-python -m barca.train --config configs/lora.yaml
+python -m barca.training --config configs/lora.yaml
 ```
 
 Quick overrides (useful for smoke tests and sweeps) are available on the CLI:
 
 ```bash
-python -m barca.train --config configs/full_ft_smoke.yaml \
+python -m barca.training --config configs/full_ft_smoke.yaml \
     --max_steps 200 --per_device_train_batch_size 32 --learning_rate 2e-3 \
     --max_train_samples 2000 --max_eval_samples 200 --no_wandb \
     --set gradient_checkpointing=false
@@ -238,7 +244,7 @@ uploaded to the run. Pass `--no_wandb` (or `wandb.enabled: false`) to disable.
   `/opt/miniconda3/bin/python`).
 - Set `model.attn_implementation` to `flash_attention_2` only if flash-attn is
   installed; otherwise use `sdpa` or `null`.
-- Cross-node/multi-GPU launches use `torchrun` (see `scripts/train.sh`).
+- Cross-node/multi-GPU launches use `torchrun` (see `scripts/training/train.sh`).
 - Adjust `data.num_proc`, `dataloader_num_workers` and
   `per_device_train_batch_size` to the server's CPU/RAM/VRAM budget.
 
