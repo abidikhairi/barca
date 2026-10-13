@@ -1,0 +1,108 @@
+# LoRA fine-tune in float32 on top of the embedding-only checkpoint, random 2M subset.
+#
+# Starts from outputs/barca-0.8b-emb-1m-fp32 (protein-token embeddings already
+# trained, transformer untouched). LoRA freezes every base weight, so those
+# embeddings stay exactly as trained; only the adapters learn.
+#
+# LoRA targets self-attention + MLP projections; the linear_attn (GatedDeltaNet)
+# projections are excluded to keep the FLA fast path intact.
+#
+# LR: cosine, peak 5e-5, 3% warmup (~470 steps), decaying to a 10% floor (5e-6).
+# 2M samples / (32 x 4 accum) = 15,625 optimizer steps.
+#
+#   python -m barca.training --config configs/lora_2m_fp32.yaml
+
+run:
+  name: barca-0.8b-lora-2m-fp32
+  output_dir: outputs/barca-0.8b-lora-2m-fp32
+  seed: 42
+  description: LoRA (r=64) fp32 fine-tune of emb-1m-fp32 on a random 2M subset.
+
+data:
+  path: /home/kabidi/workspace/datasets/uniref50/barca_5m
+  train_split: train
+  eval_split: valid
+  test_split: null
+  text_column: text
+  max_seq_length: 515
+  packing: false
+  packing_add_eos: true
+  tokenized: null
+  shuffle_samples: true
+  max_train_samples: 2000000
+  max_eval_samples: 2000
+  eval_fraction: 0.0
+  test_fraction: 0.0
+  num_proc: 8
+
+tokenizer:
+  name_or_path: outputs/barca-0.8b-emb-1m-fp32
+  trust_remote_code: true
+  use_fast: true
+
+model:
+  name_or_path: outputs/barca-0.8b-emb-1m-fp32
+  trust_remote_code: true
+  dtype: float32
+  attn_implementation: sdpa
+  gradient_checkpointing: true
+
+peft:
+  enabled: true
+  method: lora
+  r: 64
+  alpha: 128
+  dropout: 0.05
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+  bias: none
+  use_rslora: false
+
+training:
+  # 32 x 4 = 128 samples/step, same as the other fp32 recipes (memory is shared
+  # CPU/GPU on the GB10; do not raise the per-device batch without measuring).
+  per_device_train_batch_size: 32
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 4
+  learning_rate: 5.0e-5
+  lr_scheduler_type: cosine_with_min_lr
+  lr_scheduler_kwargs:
+    min_lr_rate: 0.1
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  num_train_epochs: 1
+  max_steps: -1
+  logging_steps: 50
+  eval_strategy: steps
+  eval_steps: 500
+  save_strategy: steps
+  save_steps: 500
+  bf16: false
+  fp16: false
+  optim: adamw_torch
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 4
+  report_to: [wandb]
+
+checkpointing:
+  top_k: 3
+  metric: eval_loss
+  greater_is_better: false
+  keep_last: false
+
+wandb:
+  enabled: true
+  project: Barca
+  entity: null
+  tags: [lora, fp32, protein, barca-0.8b, 2m, emb-init]
+  notes: LoRA r=64 fp32 on emb-1m-fp32, random 2M subset, cosine 5e-5 -> 5e-6, 3% warmup.
+  log_config: true
+  watch: "false"
