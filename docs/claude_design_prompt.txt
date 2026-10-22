@@ -1,0 +1,23 @@
+Create a set of 4 academic-quality diagrams for a protein language model paper (bioinformatics / ML venue style). Style: clean, modern, slightly glossy (soft gradients, subtle shadows, rounded rectangles), a restrained palette (deep navy, teal, amber accent, light grey), consistent iconography, vector-crisp, white background, readable at single-column width. Concise labels, no paragraphs inside figures. Use one consistent colour per stage across all figures. Provide each as a standalone SVG.
+
+PROJECT: "Barca", a protein-capable LLM built on a text LLM, trained in stages.
+
+FIGURE 1. Training pipeline overview (horizontal, wide). Seven stage cards connected by arrows, left to right, with a solid outline for done/running stages and a dashed outline for planned ones:
+ 0. Base model: Qwen3.5-0.8B-Base (text LLM).
+ 1. Vocabulary extension: +22 tokens (20 amino acids prefixed with the Greek letter zeta, plus <protein> and </protein> delimiters). Status: done.
+ 2. Embedding warm-up: train only the 22 new embedding rows (rest frozen), on 1M UniRef50 sequences. Status: done.
+ 3. LoRA protein pre-training: LoRA r=64, 2M UniRef50 sequences, 15,625 steps. Status: running (about 78%).
+ 4. Calibration (planned): LoRA calibration on a mix of natural-language text (88%) and protein (12%), to recover text ability lost in stage 3.
+ 5. Supervised fine-tuning (planned): instruction mix of general-purpose, biomedical and protein-design data, with protein-design instructions making up 80% of the dataset.
+ 6. Reinforcement learning (planned): GRPO for protein design with biologically informed reward functions.
+Show a small "what changes" caption under each card (embeddings only / LoRA adapters / full model as applicable) and a status chip (Done, Running, Planned).
+
+FIGURE 2. Tokenizer and model view. Left: the original vocabulary block with the 22 new tokens appended (ids 248077-248098) shown as a distinct coloured strip of 20 amino-acid chips (zeta-A, zeta-C, ..., zeta-Y) and two delimiter chips. Right: a transformer stack with the embedding / tied output head highlighted; show which parameters are trainable in stage 2 (only the 22 new embedding rows) versus stage 3 (LoRA adapters on attention/MLP projections, rank 64). Use a lock icon for frozen and a flame or spark icon for trainable.
+
+FIGURE 3. Data mixtures per stage (compact grouped bar or stacked-bar panel). Stage 2: 1M protein sequences. Stage 3: 2M protein sequences. Stage 4: text 88% vs protein 12%. Stage 5: SFT mixture with protein-design instructions at 80%, the other 20% split among instruction, biomedical and general-purpose data (leave the split as unlabeled slices). Mark stages 4-6 as planned with hatching.
+
+FIGURE 4. The calibration and RL loops (two small panels side by side).
+ Panel A (calibration): protein batch and text batch go into the LoRA model; a frozen base-model copy provides teacher logits on the text batch; loss = language-model loss + KL(student || frozen teacher).
+ Panel B (GRPO): prompt -> policy samples a group of protein sequences -> reward functions (e.g. structure confidence from a folding model, validity/composition filters, optionally function-related scores) -> group-relative advantage -> policy update. Keep reward names generic and mark them "biologically informed rewards".
+
+CONSTRAINTS: Consistent fonts (a clean sans-serif), colours consistent with the stage colours in Figure 1, labels at least 9 pt at final size, no decorative clutter, no invented numbers beyond those given above. Leave an unobtrusive legend (Done / Running / Planned, Frozen / Trainable).
