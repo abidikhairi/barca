@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+from transformers import DataCollatorForLanguageModeling, Trainer
+
 from ..config import Config
 from ..data import build_tokenized_datasets
 from ..modeling import load_model, load_tokenizer
@@ -36,7 +38,9 @@ def main(argv: Optional[list] = None) -> None:
     ensure_dir(cfg.run.output_dir)
 
     fingerprint = config_fingerprint(cfg.to_dict())
-    LOGGER.info("Run %s (config %s) -> %s", cfg.run.name, fingerprint, cfg.run.output_dir)
+    LOGGER.info(
+        "Run %s (config %s) -> %s", cfg.run.name, fingerprint, cfg.run.output_dir
+    )
     if cfg.wandb.enabled:
         # Tag the run with the config fingerprint for easy lookup.
         if fingerprint not in cfg.wandb.tags:
@@ -50,8 +54,6 @@ def main(argv: Optional[list] = None) -> None:
         cfg.to_yaml(resolved_config_path)
 
     setup_wandb_env(cfg)
-
-    from transformers import DataCollatorForLanguageModeling, Trainer
 
     tokenizer = load_tokenizer(cfg)
     datasets = build_tokenized_datasets(cfg, tokenizer)
@@ -109,7 +111,9 @@ def main(argv: Optional[list] = None) -> None:
         callbacks=callbacks,
     )
 
-    resolve_warmup_steps(training_args, datasets["train"], trainer.accelerator.num_processes)
+    resolve_warmup_steps(
+        training_args, datasets["train"], trainer.accelerator.num_processes
+    )
 
     LOGGER.info("Starting training.")
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
@@ -137,9 +141,15 @@ def main(argv: Optional[list] = None) -> None:
         cfg.to_yaml(Path(final_dir) / "config.yaml")
     LOGGER.info("Final model saved to %s", final_dir)
 
-    metrics = trainer.evaluate(eval_dataset=datasets.get("eval")) if datasets.get("eval") else {}
+    metrics = (
+        trainer.evaluate(eval_dataset=datasets.get("eval"))
+        if datasets.get("eval")
+        else {}
+    )
     if datasets.get("test"):
-        test_metrics = trainer.evaluate(eval_dataset=datasets["test"], metric_key_prefix="test")
+        test_metrics = trainer.evaluate(
+            eval_dataset=datasets["test"], metric_key_prefix="test"
+        )
         metrics.update(test_metrics)
     if is_main_process():
         LOGGER.info("Final metrics: %s", metrics)
