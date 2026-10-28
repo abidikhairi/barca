@@ -1,0 +1,109 @@
+# Calibration run: full fine-tune (all parameters, fp32) of the merged LoRA-2M model
+# on the protein + text calibration set (no KL term).
+#
+# Start: outputs/barca-0.8b-lora-2m-merged (emb-1m-fp32 + LoRA r=64 step 15625, merged).
+# Data:  /home/kabidi/workspace/datasets/barca/calibration, pre-tokenized, not packed.
+#        85,500 train rows = 9,500 each of Protein + 8 Cosmopedia subsets (4% of tokens
+#        are protein); 4,500 validation rows. Lengths 12-4,061 tokens (mean 701).
+#
+# Batch: 128 samples/step as in the other fp32 recipes -> 668 steps per epoch.
+# Memory: pre-tokenized splits are NOT truncated (data.max_seq_length is ignored), and
+#   the collator pads each batch to its longest row, so one 4k-token row inflates the
+#   whole micro-batch. The logits (batch x padded_len x 248k vocab, fp32) dominate
+#   memory; per-device batch 4 keeps the worst case at 4 x 4,061 = 16k tokens, equal
+#   to the 32 x 515 micro-batch measured on the GB10 for the 2M LoRA run. Full FT
+#   adds ~9 GB for grads + Adam state on top of that run's ~52 GB.
+#   To go faster, make a copy of the dataset with rows > 2,048 tokens dropped (246
+#   rows) and raise per_device_train_batch_size to 8.
+#
+# Smoke test first (longest rows can OOM):
+#   python -m barca.training --config configs/calibration_ft.yaml --no_wandb --max_steps 2
+#
+#   python -m barca.training --config configs/calibration_ft.yaml
+
+run:
+  name: barca-0.8b-calibration-ft
+  output_dir: outputs/barca-0.8b-calibration-ft
+  seed: 42
+  description: Full fine-tune (fp32, constant lr 2e-6) of the merged LoRA-2M model on the protein/text calibration set.
+
+data:
+  # Split-root layout: <path>/{train,validation} are save_to_disk datasets.
+  path: /home/kabidi/workspace/datasets/barca/calibration
+  train_split: train
+  eval_split: validation
+  test_split: null
+  text_column: text
+  # Not applied to the pre-tokenized splits (see header).
+  max_seq_length: 4096
+  packing: false
+  packing_add_eos: true
+  tokenized: null
+  shuffle_samples: true
+  max_train_samples: null
+  max_eval_samples: null
+  eval_fraction: 0.0
+  test_fraction: 0.0
+  num_proc: 8
+
+tokenizer:
+  name_or_path: outputs/barca-0.8b-lora-2m-merged
+  trust_remote_code: true
+  use_fast: true
+
+model:
+  name_or_path: outputs/barca-0.8b-lora-2m-merged
+  trust_remote_code: true
+  dtype: float32
+  attn_implementation: sdpa
+  gradient_checkpointing: true
+  # No trainable_token_range: every parameter is trained.
+
+peft:
+  enabled: false
+
+training:
+  # 4 x 32 = 128 samples/step (see header for why the per-device batch is 4).
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 32
+  # Constant 2e-6 for the whole run: no warmup, no decay.
+  learning_rate: 2.0e-6
+  lr_scheduler_type: constant
+  warmup_ratio: 0.0
+  weight_decay: 0.01
+  num_train_epochs: 1
+  max_steps: -1
+  logging_steps: 10
+  # 668 steps/epoch -> evals at 167, 334, 501 and 668. save_steps must equal eval_steps.
+  eval_strategy: steps
+  eval_steps: 167
+  save_strategy: steps
+  save_steps: 167
+  bf16: false
+  fp16: false
+  optim: adamw_torch
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 4
+  # Off on purpose: length-grouped batches make each optimizer step a single length
+  # band, so protein-only steps (the shortest rows) would alternate with text-only
+  # steps. Turning it on cuts padding from ~1.5x to ~1.1x (about 25% faster).
+  group_by_length: false
+  report_to: [wandb]
+
+checkpointing:
+  top_k: 3
+  metric: eval_loss
+  greater_is_better: false
+  keep_last: false
+
+wandb:
+  enabled: true
+  project: Barca
+  entity: null
+  tags: [full-finetune, fp32, calibration, protein, text, barca-0.8b]
+  notes: Full FT (fp32, constant lr 2e-6) of the merged LoRA-2M model on 85.5k protein+text rows, no KL.
+  log_config: true
+  watch: "false"
