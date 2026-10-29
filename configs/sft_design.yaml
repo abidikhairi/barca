@@ -1,0 +1,107 @@
+# SFT: protein design from Mol-Instructions, full fine-tune (all parameters, fp32) of the
+# calibrated model.
+#
+# Start: outputs/barca-0.8b-calibration-ft (full FT of the merged LoRA-2M model on the
+#        protein + text calibration set).
+# Data:  /home/kabidi/workspace/datasets/barca/mol-instruct, pre-tokenized chat conversations
+#        (scripts/data/prepare_mol_instruct_design.py). 190,554 train rows (109M tokens, mean
+#        572, max 1,171) and 2,000 validation rows held out by protein accession.
+# Loss:  on the whole conversation (question and answer). The dataset has no `labels` column and
+#        the collator builds labels from input_ids, so the prompt is NOT masked.
+#
+# LR: cosine to 0, peak 2e-4, 3% warmup (~223 steps). 5 epochs x 1,489 = 7,445 optimizer steps
+#   (190,554 / 128 per epoch).
+#   2e-4 is high for a full fine-tune (the calibration run used 2e-6); watch the first
+#   ~100 steps of train loss for divergence.
+#
+# Batch: 4 x 32 = 128 samples/step. The collator pads each micro-batch to its longest row,
+#   so the worst case is 4 x 1,171 tokens, below the calibration run's 4 x 4,061.
+#   group_by_length is on: padding drops from 1.43x (random batches) to ~1.05x, about 60 s/step
+#   on an idle GB10 (~25 h per epoch, ~125 h for 5). Every row is protein design, so a step drawn from
+#   one length band only shifts the protein length, not the modality.
+#
+# Smoke test first:
+#   python -m barca.training --config configs/sft_design.yaml --no_wandb --max_steps 2
+#
+#   python -m barca.training --config configs/sft_design.yaml
+
+run:
+  name: barca-0.8b-sft-design
+  output_dir: outputs/barca-0.8b-sft-design
+  seed: 42
+  description: Full fine-tune (fp32) of the calibrated model on Mol-Instructions protein design, loss on question and answer.
+
+data:
+  # Split-root layout: <path>/{train,validation} are save_to_disk datasets.
+  path: /home/kabidi/workspace/datasets/barca/mol-instruct
+  train_split: train
+  eval_split: validation
+  test_split: null
+  text_column: text
+  # Not applied to the pre-tokenized splits.
+  max_seq_length: 2048
+  packing: false
+  packing_add_eos: true
+  tokenized: null
+  shuffle_samples: true
+  max_train_samples: null
+  max_eval_samples: null
+  eval_fraction: 0.0
+  test_fraction: 0.0
+  num_proc: 8
+
+tokenizer:
+  name_or_path: outputs/barca-0.8b-calibration-ft
+  trust_remote_code: true
+  use_fast: true
+
+model:
+  name_or_path: outputs/barca-0.8b-calibration-ft
+  trust_remote_code: true
+  dtype: float32
+  attn_implementation: sdpa
+  gradient_checkpointing: true
+
+peft:
+  enabled: false
+
+training:
+  per_device_train_batch_size: 4
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 32
+  learning_rate: 2.0e-4
+  lr_scheduler_type: cosine
+  warmup_ratio: 0.03
+  weight_decay: 0.01
+  num_train_epochs: 5
+  max_steps: -1
+  logging_steps: 10
+  # 15 evals over 7,445 steps. save_steps must equal eval_steps.
+  eval_strategy: steps
+  eval_steps: 500
+  save_strategy: steps
+  save_steps: 500
+  bf16: false
+  fp16: false
+  optim: adamw_torch
+  gradient_checkpointing: true
+  gradient_checkpointing_kwargs:
+    use_reentrant: false
+  dataloader_num_workers: 4
+  group_by_length: true
+  report_to: [wandb]
+
+checkpointing:
+  top_k: 3
+  metric: eval_loss
+  greater_is_better: false
+  keep_last: false
+
+wandb:
+  enabled: true
+  project: Barca
+  entity: null
+  tags: [full-finetune, fp32, sft, protein-design, mol-instructions, barca-0.8b]
+  notes: Full FT fp32 SFT on Mol-Instructions protein design (190k rows), cosine 2e-4, 5 epochs, loss on question and answer.
+  log_config: true
+  watch: "false"
