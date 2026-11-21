@@ -1,0 +1,20 @@
+# Chosen inference config for the SFT-design model (protein design from an instruction).
+# Selected 2026-11-05 from scripts/generation/sweep500_sft_design.py on checkpoint-3000
+# (500 Mol-Instructions validation prompts x 12 configs; results in sft_design_sweep.yaml).
+# Not yet checked for foldability (pLDDT) against the runner-up T0.6 rp1.2.
+
+checkpoint: outputs/barca-0.8b-sft-design/checkpoint-3000
+prompt_format: "<|im_start|>user\n{instruction}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+precision: fp32
+stop_token: "<|im_end|>"      # eos_token_id = id of <|im_end|>
+max_new_tokens: 1100
+
+generation:
+  do_sample: true
+  temperature: 0.8
+  top_p: 0.95
+  top_k: 50
+  repetition_penalty: 1.2
+
+# 500-prompt result for this config: 483/500 closed (</protein> emitted), closed length 1.03x the
+# reference, unique 5-mers 0.98. Runner-up: T0.6 rp1.2 (443/500 closed, 0.97x, 0.91).

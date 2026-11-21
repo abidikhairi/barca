@@ -1,0 +1,56 @@
+# Generation-config sweep for the SFT-design model (protein design from instructions).
+# Script: scripts/generation/sweep10_sft_design.py (run from the repo root on the server:
+#   python eval_out/sweep10.py outputs/barca-0.8b-sft-design/checkpoint-2500 ck2500)
+# Result of the 2026-11-03 run on checkpoint-2500 (step 2500, eval_loss 1.383, lr still ~1.6e-4,
+# not annealed; training stopped there on purpose).
+#
+# Data: 10 random rows of the Mol-Instructions validation split (random.Random(123).sample),
+#       chat template with an empty <think> block, assistant turn generated until <|im_end|>.
+# Common: fp32, seed 0 (torch.manual_seed before every generation), max_new_tokens 1100.
+# Metrics: closed = emitted </protein>; len/ref over closed outputs only; uniq5 = unique 5-mers /
+#          (len-4); refcov = fraction of the reference's 5-mers found in the output.
+# Caveat: one seed, 10 prompts, one checkpoint -> differences of 1-2 in "closed" are noise.
+
+checkpoint: outputs/barca-0.8b-sft-design/checkpoint-2500
+max_new_tokens: 1100
+seed: 0
+n_prompts: 10
+
+configs:
+  - {name: "greedy rp1.0", do_sample: false, repetition_penalty: 1.0}
+  - {name: "greedy rp1.2", do_sample: false, repetition_penalty: 1.2}
+  - {name: "T0.3 rp1.0",  do_sample: true, temperature: 0.3, top_p: 0.95, top_k: 50, repetition_penalty: 1.0}
+  - {name: "T0.3 rp1.2",  do_sample: true, temperature: 0.3, top_p: 0.95, top_k: 50, repetition_penalty: 1.2}
+  - {name: "T0.5 rp1.0",  do_sample: true, temperature: 0.5, top_p: 0.95, top_k: 50, repetition_penalty: 1.0}
+  - {name: "T0.6 rp1.2",  do_sample: true, temperature: 0.6, top_p: 0.95, top_k: 50, repetition_penalty: 1.2}
+  - {name: "T0.8 rp1.0",  do_sample: true, temperature: 0.8, top_p: 0.95, top_k: 50, repetition_penalty: 1.0}
+  - {name: "T1.0 k0 p1.0", do_sample: true, temperature: 1.0, top_p: 1.0, top_k: 0, repetition_penalty: 1.0}
+
+results:   # closed / canonical / len-over-ref (closed) / unique 5-mers / ref 5-mer overlap
+  "greedy rp1.0": {closed: 4,  canonical: 10, len_ratio: 0.97, uniq5: 0.51, refcov: 0.031}
+  "greedy rp1.2": {closed: 7,  canonical: 10, len_ratio: 0.83, uniq5: 0.72, refcov: 0.019}
+  "T0.3 rp1.0":   {closed: 5,  canonical: 10, len_ratio: 0.93, uniq5: 0.59, refcov: 0.028}
+  "T0.3 rp1.2":   {closed: 7,  canonical: 10, len_ratio: 0.95, uniq5: 0.72, refcov: 0.014}
+  "T0.5 rp1.0":   {closed: 4,  canonical: 10, len_ratio: 0.91, uniq5: 0.50, refcov: 0.018}
+  "T0.6 rp1.2":   {closed: 10, canonical: 10, len_ratio: 0.66, uniq5: 1.00, refcov: 0.011}
+  "T0.8 rp1.0":   {closed: 7,  canonical: 10, len_ratio: 1.23, uniq5: 0.76, refcov: 0.026}
+  "T1.0 k0 p1.0": {closed: 10, canonical: 10, len_ratio: 0.55, uniq5: 1.00, refcov: 0.005}
+
+# ---------------------------------------------------------------------------------------------
+# 2026-11-05: checkpoint-3000, 500 validation prompts (random.Random(789).sample), batched (50),
+# 12 configs, seed 0 per batch. Script: scripts/generation/sweep500_sft_design.py.
+# All use top_p 0.95, top_k 50. Fields: closed (of 500), len_ratio (closed, mean per-prompt
+# gen/ref), uniq5 (mean over all 500). Chosen: "T0.8 rp1.2" -> sft_design_best.yaml.
+results_ck3000_n500:
+  "greedy rp1.1": {closed: 285, len_ratio: 1.01, uniq5: 0.62}
+  "greedy rp1.2": {closed: 323, len_ratio: 0.93, uniq5: 0.68}
+  "greedy rp1.3": {closed: 346, len_ratio: 0.80, uniq5: 0.71}
+  "T0.3 rp1.1":   {closed: 292, len_ratio: 0.98, uniq5: 0.64}
+  "T0.3 rp1.2":   {closed: 344, len_ratio: 0.93, uniq5: 0.72}
+  "T0.3 rp1.3":   {closed: 369, len_ratio: 0.73, uniq5: 0.76}
+  "T0.5 rp1.1":   {closed: 320, len_ratio: 0.99, uniq5: 0.72}
+  "T0.5 rp1.2":   {closed: 403, len_ratio: 0.95, uniq5: 0.84}
+  "T0.6 rp1.2":   {closed: 443, len_ratio: 0.97, uniq5: 0.91}
+  "T0.8 rp1.0":   {closed: 252, len_ratio: 1.39, uniq5: 0.85}
+  "T0.8 rp1.1":   {closed: 431, len_ratio: 1.44, uniq5: 0.96}
+  "T0.8 rp1.2":   {closed: 483, len_ratio: 1.03, uniq5: 0.98}
