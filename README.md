@@ -50,6 +50,42 @@ Generated sequences and per-design metadata are in
 computational designs scored by predicted structure only; they have **not** been
 expressed or assayed in a wet lab.
 
+### More designs, coloured by pLDDT
+
+These additional designs are single-model predictions, coloured by per-residue
+pLDDT (red ≤ 50, blue ≥ 90). The first two come from the SFT design model; the
+last two are GRPO candidates from the same prompts, shown to illustrate the
+reward-based refinement stage.
+
+<p align="center">
+  <a href="docs/showcase/plddt-A0A4R7J9U3.jpg">
+    <img src="docs/showcase/plddt-A0A4R7J9U3.jpg" alt="pLDDT-coloured design for A0A4R7J9U3" width="49%">
+  </a>
+  <a href="docs/showcase/plddt-A0A6G7X2U9.jpg">
+    <img src="docs/showcase/plddt-A0A6G7X2U9.jpg" alt="pLDDT-coloured design for A0A6G7X2U9" width="49%">
+  </a>
+</p>
+<p align="center">
+  <a href="docs/showcase/plddt-A9BDG0-grpo.jpg">
+    <img src="docs/showcase/plddt-A9BDG0-grpo.jpg" alt="pLDDT-coloured GRPO design for A9BDG0" width="49%">
+  </a>
+  <a href="docs/showcase/plddt-B8GRD3-grpo.jpg">
+    <img src="docs/showcase/plddt-B8GRD3-grpo.jpg" alt="pLDDT-coloured GRPO design for B8GRD3" width="49%">
+  </a>
+</p>
+
+| Design | Source | Target | Length | pLDDT | pTM | Note |
+|---|---|---|---:|---:|---:|---|
+| `A0A4R7J9U3` | SFT ckpt-3000 | ITP/dITP pyrophosphatase | 199 aa | 88.6 | 0.789 | compact α/β domain |
+| `A0A6G7X2U9` | SFT ckpt-3000 | CoA biosynthesis, two-domain enzyme | 399 aa | 91.9 | 0.619 | high pLDDT, less confident domain arrangement |
+| `A9BDG0` | GRPO ckpt-3000 | UDP-GlcNAc glycosyltransferase (MurG-like) | 348 aa | 91.3 | 0.891 | redesign of a 355-aa reference |
+| `B8GRD3` | GRPO ckpt-3000 | RNase P protein component | 117 aa | 73.5 | 0.641 | SFT candidate folded at 54.6 pLDDT |
+
+Predictions use ColabFold (AlphaFold2) with the full 20-loop/100-step setting.
+The pLDDT colour scale is the same in every panel; pTM is reported separately
+because a confident local fold can still have an uncertain domain arrangement
+(visible for `A0A6G7X2U9`).
+
 ---
 
 ## Features
