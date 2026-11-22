@@ -13,6 +13,9 @@ top-k checkpointing, and W&B logging.
 The model's tokenizer adds 22 protein tokens at ids **248077–248098**: the 20
 ζ-prefixed amino acids (`ζA`…`ζY`) plus `<protein>` and `</protein>`.
 
+**Released model:** [`khairi/barca-0.8b-sft-design`](https://huggingface.co/khairi/barca-0.8b-sft-design)
+· **Release write-up:** [Designing proteins with a 0.8B language model](docs/blog/barca-protein-design-release.md)
+
 ---
 
 ## Design showcase
@@ -94,8 +97,8 @@ because a confident local fold can still have an uncertain domain arrangement
 - **Full / LoRA / QLoRA** training selected with a single flag.
 - **Instruction-conditioned protein design** from Mol-Instructions, using the
   model's chat template and ζ-prefixed protein tokens.
-- **GRPO** with a multi-objective reward: format, reference 5-mer F1,
-  ESMFold2 pLDDT (via a local service), diversity, and length.
+- **GRPO** with a reward suite: binary format, flat ESMFold2 pLDDT bands,
+  and a reference-length band reward.
 - **Selective token training**: freeze everything except chosen embedding rows
   and the tied `lm_head` (used to learn the added protein tokens).
 - **Top-k checkpointing**: keep only the best `k=3` checkpoints by evaluation
@@ -122,6 +125,7 @@ barca/
 ├── docs/
 │   ├── lora_2m_findings.md        # LoRA 2M experiment notes
 │   ├── grpo_recipe.md             # GRPO design notes and acceptance criteria
+│   ├── blog/                      # release write-up
 │   └── showcase/                  # design figures + FASTA
 ├── scripts/
 │   ├── training/
@@ -296,18 +300,17 @@ rows instead of the whole vocabulary matrix.
 ## GRPO
 
 `scripts/training/train_grpo.py` continues an SFT design checkpoint with TRL's
-`GRPOTrainer` and a LoRA adapter. Completions are scored by
-`src/barca/rl/rewards.py`:
+`GRPOTrainer` and **full fine-tuning** (`G=8`, lr `3e-6`, cosine schedule).
+Completions are scored by `src/barca/rl/rewards.py`:
 
 | Reward | What it measures |
 |---|---|
-| `format` | closed `</protein>`, parseable, canonical AAs, 30–512 aa |
-| `ref_f1` | 5-mer F1 against the reference sequence |
-| `foldability` | low-cycle ESMFold2 pLDDT from a local FastAPI service |
-| `diversity` | unique 5-mer fraction (penalizes repeats/collapse) |
-| `length` | closeness to reference length or the 30–512 aa target |
+| `format` | binary: one closed `<protein>` block with ζ-prefixed canonical AAs |
+| `foldability` | flat pLDDT bands: `<50` −1.0, `50–70` −0.5, `70–90` +0.5, `≥90` +1.0 |
+| `length` | piecewise band around the reference length |
 
-Start the foldability service on a GPU host, then run GRPO:
+Invalid outputs get foldability `−2.0`; the service scores valid sequences from
+10 to 1024 aa. Start the service on a GPU host, then run GRPO:
 
 ```bash
 python scripts/serving/esmfold2_service.py --host 127.0.0.1 --port 8010
