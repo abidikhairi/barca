@@ -9,7 +9,7 @@ architecture/experiment notes, and `docs/lora_2m_findings.md` for the LoRA 2M wr
 ## Commands
 
 ```bash
-pytest -q                                  # 30 tests; pytest pythonpath=src is in pyproject
+pytest -q                                  # 41 tests; pytest pythonpath=src is in pyproject
 pytest tests/test_config.py -q             # config tests need only PyYAML
 pytest tests/test_callbacks.py::test_name  # single test
 ruff check .                               # line-length 100, py310; tracked code is clean, but
@@ -19,6 +19,10 @@ python -m barca.training --config configs/lora.yaml [--no_wandb --max_steps N --
 PYTHON=/opt/miniconda3/bin/python ./scripts/training/train.sh configs/lora.yaml
 NUM_GPUS=4 ./scripts/training/train.sh configs/qlora.yaml   # torchrun
 ```
+
+GRPO:
+PYTHONPATH=src /opt/miniconda3/bin/python scripts/training/train_grpo.py --config configs/grpo.yaml
+python scripts/serving/esmfold2_service.py --host 127.0.0.1 --port 8010  # pLDDT reward service
 
 Training runs on the remote GPU server, not locally. `make sync`, `make smoke`,
 `make train RECIPE=...`, `make inspect`, `make pull checkpoint-1000` wrap that workflow;

@@ -1,27 +1,72 @@
 # Barca
 
-Training and fine-tuning toolkit for the **Barca** protein language model
-family (named after the Barcid family of Carthage — most famously
-**Hannibal Barca**).
+**Barca** is a protein language model family and training toolkit named after
+the Barcid family of Carthage — most famously **Hannibal Barca**.
 
-This repo focuses on fine-tuning [`khairi/barca-0.8b-base`](https://huggingface.co/khairi/barca-0.8b-base)
-— a Llama-style, decoder-only model — on protein sequence datasets with a
-causal-language-modeling objective. It supports **full fine-tuning**, **LoRA**
-and **QLoRA**, driven entirely by YAML recipes, with Weights & Biases logging
-and automatic retention of the **top-3 checkpoints by evaluation loss**.
+This repository fine-tunes [`khairi/barca-0.8b-base`](https://huggingface.co/khairi/barca-0.8b-base),
+a Qwen3.5-based decoder-only LM, for **protein sequence design**: from
+causal-language-modeling pretraining to instruction-conditioned SFT, reward-based
+GRPO refinement, sampling, and fold-based evaluation. Runs are driven by YAML
+recipes, with full fine-tuning, LoRA, QLoRA, selective token training,
+top-k checkpointing, and W&B logging.
+
+The model's tokenizer adds 22 protein tokens at ids **248077–248098**: the 20
+ζ-prefixed amino acids (`ζA`…`ζY`) plus `<protein>` and `</protein>`.
+
+---
+
+## Design showcase
+
+Instruction-conditioned designs from
+`outputs/barca-0.8b-sft-design/checkpoint-3000`, sampled at temperature 0.8.
+Each panel shows the Mol-Instructions reference structure, the generated design,
+and their CA superposition. Structures were predicted with ColabFold
+(AlphaFold2) from the public MSA server; colour in the right-hand panels is
+per-residue pLDDT.
+
+<p align="center">
+  <a href="docs/showcase/design-A0A520QGW6.jpg">
+    <img src="docs/showcase/design-A0A520QGW6.jpg" alt="Design for A0A520QGW6: reference, generated and superposition" width="100%">
+  </a>
+</p>
+
+<p align="center">
+  <a href="docs/showcase/design-A0A1F9H9W0.jpg">
+    <img src="docs/showcase/design-A0A1F9H9W0.jpg" alt="Design for A0A1F9H9W0: reference, generated and superposition" width="49%">
+  </a>
+  <a href="docs/showcase/design-A0A238LJZ9.jpg">
+    <img src="docs/showcase/design-A0A238LJZ9.jpg" alt="Design for A0A238LJZ9: reference, generated and superposition" width="49%">
+  </a>
+</p>
+
+| Target | Function (prompt summary) | Reference | Design | pLDDT | pTM | CA-RMSD |
+|---|---|---|---:|---:|---:|---:|
+| `A0A520QGW6` | aspartate-semialdehyde dehydrogenase, L-threonine biosynthesis | 336 aa | 341 aa | **96.4** | **0.922** | **0.765 Å** (289/336) |
+| `A0A1F9H9W0` | ITP/dITP diphosphatase, purine house-cleaning | 203 aa | 191 aa | **94.1** | **0.875** | **0.898 Å** (144/191) |
+| `A0A238LJZ9` | kynureninase, PLP-dependent tryptophan catabolism | 396 aa | 419 aa | **95.9** | **0.931** | **1.120 Å** (300/396) |
+
+Generated sequences and per-design metadata are in
+[`docs/showcase/designs.fasta`](docs/showcase/designs.fasta). These are
+computational designs scored by predicted structure only; they have **not** been
+expressed or assayed in a wet lab.
 
 ---
 
 ## Features
 
-- **YAML recipes** (`configs/`) for every run — no code changes to sweep settings.
+- **YAML recipes** (`configs/`) for SFT, LoRA/QLoRA, calibration, and GRPO.
 - **Full / LoRA / QLoRA** training selected with a single flag.
-- **Tokenization + packing** utilities for large protein corpora.
-- **Top-k checkpointing**: keeps only the best `k=3` checkpoints by `eval_loss`
-  on disk (configurable metric and direction).
-- **W&B logging** of metrics, the resolved recipe, and optional model watching.
-- Works with datasets saved via `datasets.save_to_disk` / `load_from_disk`.
-- Multi-GPU via `torchrun`.
+- **Instruction-conditioned protein design** from Mol-Instructions, using the
+  model's chat template and ζ-prefixed protein tokens.
+- **GRPO** with a multi-objective reward: format, reference 5-mer F1,
+  ESMFold2 pLDDT (via a local service), diversity, and length.
+- **Selective token training**: freeze everything except chosen embedding rows
+  and the tied `lm_head` (used to learn the added protein tokens).
+- **Top-k checkpointing**: keep only the best `k=3` checkpoints by evaluation
+  loss; evaluation and saving share a cadence.
+- Tokenization, packing, generation, filtering, and folding utilities.
+- W&B logging; multi-GPU via `torchrun`; datasets loaded with
+  `datasets.load_from_disk`.
 
 ---
 
@@ -29,101 +74,134 @@ and automatic retention of the **top-3 checkpoints by evaluation loss**.
 
 ```
 barca/
-├── configs/                  # YAML training recipes
+├── configs/                       # training recipes + generation settings
 │   ├── full_ft.yaml
 │   ├── lora.yaml
-│   └── qlora.yaml
+│   ├── qlora.yaml
+│   ├── calibration_ft.yaml
+│   ├── sft_design.yaml
+│   ├── sft_design_continue_2e-6.yaml
+│   ├── grpo.yaml
+│   └── generation/                # sampling configs (not --config inputs)
+├── docs/
+│   ├── lora_2m_findings.md        # LoRA 2M experiment notes
+│   ├── grpo_recipe.md             # GRPO design notes and acceptance criteria
+│   └── showcase/                  # design figures + FASTA
 ├── scripts/
 │   ├── training/
-│   │   └── train.sh          # launch (single GPU / torchrun)
+│   │   ├── train.sh               # SFT launch (single GPU / torchrun)
+│   │   └── train_grpo.py          # GRPO entry point
 │   ├── data/
-│   │   ├── inspect_dataset.py  # dataset schema + sequence-length stats
-│   │   ├── split_dataset.py    # (re)build train/validation/test splits
-│   │   ├── preprocess.py       # tokenize/pack offline -> DatasetDict
-│   │   └── preprocess.sh
-│   └── generation/
-│       ├── generate.py         # prompt continuation / --probe diagnostics
-│       ├── generate_fasta.py   # sample sequences from checkpoints
-│       ├── filter_proteins.py  # keep valid/foldable sequences
-│       └── fold_plddt.py       # ESMFold + mean pLDDT
+│   │   ├── inspect_dataset.py     # schema + sequence-length stats
+│   │   ├── split_dataset.py       # (re)build train/validation/test splits
+│   │   ├── preprocess.py          # tokenize/pack offline -> DatasetDict
+│   │   └── prepare_mol_instruct_design.py  # Mol-Instructions -> chat SFT data
+│   ├── generation/
+│   │   ├── generate.py            # prompt continuation / diagnostics
+│   │   ├── generate_fasta.py      # sample sequences from checkpoints
+│   │   ├── gen_best_sft_design.py # instruction -> design + reference JSON
+│   │   ├── gen_grpo_candidates.py # GRPO candidate generation
+│   │   ├── filter_proteins.py     # keep valid/foldable sequences
+│   │   └── fold_plddt.py          # ESMFold + mean pLDDT
+│   ├── eval/
+│   │   ├── ntp/                   # next-token loss/perplexity eval
+│   │   ├── gsm8k_cot_pot.py       # text-capability check
+│   │   ├── prepare_changed_fold_input.py
+│   │   └── compare_grpo_sft_folds.py
+│   └── serving/
+│       ├── esmfold2_service.py    # local ESMFold2 pLDDT/pTM reward service
+│       └── smoke_fold_wandb.py
 ├── src/barca/
-│   ├── config.py             # typed recipe parsing
-│   ├── utils.py              # seeding, dtype, logging helpers
-│   ├── data/                 # loading.py (splits), processing.py (tokenize/pack)
-│   ├── modeling/             # loading.py, peft.py, tokens.py (selective token training)
-│   └── training/             # run.py (entry), cli.py, arguments.py, callbacks.py
-└── tests/                    # unit tests (config + checkpoint callback)
+│   ├── config.py                  # typed recipe parsing
+│   ├── data/                      # loading.py, processing.py
+│   ├── modeling/                  # loading, PEFT, selective token training
+│   ├── rl/                        # GRPO dataset + reward functions
+│   ├── training/                  # run.py, CLI, arguments, callbacks
+│   └── utils.py
+└── tests/                         # 42 unit tests
 ```
 
 ---
 
 ## Setup
 
-The training environment is expected to already provide the required libraries
-(torch, transformers, datasets, peft, accelerate, wandb, ...). To make the
-package importable on the remote server, install it in editable mode:
+The training environment is expected to provide the runtime libraries (torch,
+transformers, datasets, peft, accelerate, wandb, …). To make the package
+importable:
 
 ```bash
-pip install -e .            # core deps
-pip install -e ".[qlora]"   # + bitsandbytes for 4-bit training
-pip install -e ".[flash]"   # + flash-attention (optional)
+pip install -e .             # core deps
+pip install -e ".[qlora]"    # + bitsandbytes
+pip install -e ".[flash]"    # + flash-attention (optional)
+pip install -e ".[rl]"       # + TRL/httpx for GRPO
+pip install -e ".[serving]"  # + FastAPI service for the foldability reward
 ```
 
-No install is required either: the launch scripts prepend `src/` to
-`PYTHONPATH`, so `python -m barca.training ...` works from a fresh checkout.
+The launch scripts prepend `src/` to `PYTHONPATH`, so
+`python -m barca.training ...` also works from a fresh checkout. CUDA is
+required: the model uses FLA Triton kernels and CPU execution fails.
 
 ---
 
-## Make targets
-
-A `Makefile` wraps the common operations (defaults target the GPU server; copy
-`Makefile.local.example` to `Makefile.local` to override):
+## Quickstart
 
 ```bash
-make sync                              # rsync this repo to the server
-make train                             # fine-tune with configs/lora.yaml
-make train RECIPE=configs/full_ft.yaml # ...or another recipe
-make train RECIPE=configs/qlora.yaml NUM_GPUS=1
-make smoke                             # run configs/full_ft_smoke.yaml (2k samples)
-make inspect                           # show remote dataset splits/lengths
-make pull checkpoint-1000              # copy a checkpoint back into runs/
+# SFT / LoRA / QLoRA (single GPU)
+./scripts/training/train.sh configs/lora.yaml
+
+# Full fine-tune with an explicit output directory, no W&B
+./scripts/training/train.sh configs/full_ft.yaml \
+    --output_dir runs/barca-full-ft-1 --run_name barca-full-ft-1 --no_wandb
+
+# Multi-GPU
+NUM_GPUS=4 ./scripts/training/train.sh configs/qlora.yaml
+
+# Resume
+./scripts/training/train.sh configs/lora.yaml \
+    --resume_from_checkpoint outputs/barca-0.8b-lora/checkpoint-800
+
+# Direct invocation
+python -m barca.training --config configs/lora.yaml
+
+# Smoke test any recipe
+python -m barca.training --config configs/full_ft_smoke.yaml \
+    --max_steps 200 --no_wandb --set gradient_checkpointing=false
 ```
 
-`make pull` skips `optimizer.pt` (the AdamW state) to keep the transfer small;
-the checkpoint still contains the model weights and `trainer_state.json`.
+`--set KEY=VALUE` patches a single `transformers.TrainingArguments` field. It
+does not patch `data`, `model`, or `peft`.
+
+A `Makefile` wraps the remote workflow (`make sync`, `make smoke`,
+`make train RECIPE=...`, `make inspect`, `make pull checkpoint-1000`). Copy
+`Makefile.local.example` to `Makefile.local` to set the SSH host and data paths.
 
 ---
 
 ## Data
 
-Training data is any dataset written with `datasets.save_to_disk`, loadable via
-`datasets.load_from_disk`. Two layouts are supported:
+Training data is any dataset written with `datasets.save_to_disk` and loadable
+with `datasets.load_from_disk`. Two layouts are supported:
 
-- **Split root** — a directory with one dataset subdirectory per split, e.g.
-  `/home/kabidi/workspace/datasets/uniref50/barca_5m/{train,valid}`. The
-  directory names come from `data.train_split` / `data.eval_split` /
-  `data.test_split`.
-- **Single root** — one directory holding either a `DatasetDict` (named splits)
-  or a single `Dataset` (split in memory using `data.eval_fraction` /
-  `data.test_fraction`).
+- **Split root** — one dataset subdirectory per split, e.g.
+  `/data/proteins/barca_5m/{train,valid}`. Names come from `data.train_split`,
+  `data.eval_split`, and `data.test_split`.
+- **Single root** — one directory holding a `DatasetDict` or a single `Dataset`
+  (split in memory with `data.eval_fraction` / `data.test_fraction`).
 
-Tokenization is detected **per split**. In `barca_5m`, `train` is already
-pre-packed and pre-tokenized (`input_ids` + `attention_mask`, fixed length 515),
-while `valid` is raw (`entry`, `organism`, `sequence`, `text`) and is tokenized
-on the fly from `data.text_column` (`text`). Set `data.tokenized: true` to
-require pre-tokenized splits, `false` to force tokenization, or leave it `null`
-(default) to auto-detect each split. Because `train` is already packed, keep
-`data.packing: false` (it is ignored with a warning if enabled).
+Tokenization is detected **per split**. In `barca_5m`, `train` is pre-tokenized
+and pre-packed at length 515 while `valid` is raw, so keep
+`data.packing: false`. Pre-tokenized splits are passed through untruncated;
+`data.max_seq_length` does not apply, and the collator pads each batch to its
+longest row. A single long row can therefore OOM a micro-batch — smoke-test
+with `--max_steps 2` first.
 
 Inspect a dataset before training:
 
 ```bash
-python scripts/data/inspect_dataset.py /home/kabidi/workspace/datasets/uniref50/barca_5m
+python scripts/data/inspect_dataset.py /data/proteins/barca_5m
 ```
 
-For raw (untokenized) sequence data, use `data.text_column` (default
-`sequence`) and optionally tokenize ahead of time; reference the result from a
-recipe via `data.tokenized_path`:
+For raw sequence data:
 
 ```bash
 python scripts/data/inspect_dataset.py /data/proteins/raw \
@@ -134,58 +212,35 @@ python scripts/data/split_dataset.py /data/proteins/raw \
 ./scripts/data/preprocess.sh configs/lora.yaml --output /data/proteins/tokenized
 ```
 
+### Protein-design SFT data
+
+`scripts/data/prepare_mol_instruct_design.py` converts the **protein_design**
+subtask of [Mol-Instructions](https://huggingface.co/datasets/zjunlp/Mol-Instructions)
+into chat conversations:
+
+```
+user:       <instruction>\n\n<input>
+assistant:  <prose>\n<protein>ζMζIζ...</protein>
+```
+
+Validation is split by protein accession, so the same protein never appears in
+both splits. Note that the training collator rebuilds labels from `input_ids`
+and ignores a precomputed `labels` column, so the default loss covers the whole
+conversation (question + answer), not only the assistant turn.
+
+```bash
+python scripts/data/prepare_mol_instruct_design.py \
+    --json /data/mol-instruct/raw/protein/Protein-oriented_Instructions/protein_design.json \
+    --tokenizer outputs/barca-0.8b-calibration-ft \
+    --output /data/mol-instruct
+```
+
 ---
 
-## Training
+## Selective token training
 
-1. Edit a recipe in `configs/` (at minimum set `data.path` and the W&B
-   `project`/`entity`).
-2. Launch:
-
-```bash
-# Single GPU
-./scripts/training/train.sh configs/lora.yaml
-
-# Override output directory / run name, disable W&B
-./scripts/training/train.sh configs/full_ft.yaml \
-    --output_dir runs/barca-full-ft-1 --run_name barca-full-ft-1 --no_wandb
-
-# Multi-GPU
-NUM_GPUS=4 ./scripts/training/train.sh configs/qlora.yaml
-
-# Resume
-./scripts/training/train.sh configs/lora.yaml --resume_from_checkpoint outputs/barca-0.8b-lora/checkpoint-800
-```
-
-Equivalent direct invocation:
-
-```bash
-python -m barca.training --config configs/lora.yaml
-```
-
-Quick overrides (useful for smoke tests and sweeps) are available on the CLI:
-
-```bash
-python -m barca.training --config configs/full_ft_smoke.yaml \
-    --max_steps 200 --per_device_train_batch_size 32 --learning_rate 2e-3 \
-    --max_train_samples 2000 --max_eval_samples 200 --no_wandb \
-    --set gradient_checkpointing=false
-```
-
-`--set KEY=VALUE` patches any single `transformers.TrainingArguments` field.
-
-### Recipe structure
-
-Each YAML file has these sections: `run`, `data`, `tokenizer`, `model`, `peft`,
-`training`, `checkpointing`, `wandb`. The `training` section is forwarded
-verbatim to `transformers.TrainingArguments`; everything else is validated by
-`barca.config` so typos fail fast. Unknown keys raise an error.
-
-### Selective token training
-
-To fine-tune **only** the new protein-token embeddings and leave every other
-weight (including the rest of the vocabulary embeddings) frozen, set one of the
-`model.trainable_*` options:
+To fine-tune **only** the protein-token embeddings and leave every other weight
+frozen, set one of the `model.trainable_*` options:
 
 ```yaml
 model:
@@ -194,68 +249,145 @@ model:
   # or: trainable_token_ids: [248077, 248078, ...]
 ```
 
-All parameters are frozen and only the selected rows of the input embedding
-(and the tied `lm_head`) are trained; gradients for every other row are masked.
-In addition, `RestoreFrozenEmbeddingRowsCallback` restores the non-selected
-rows from a snapshot after each optimizer step, so `weight_decay` decays only
-the selected rows instead of the whole vocabulary matrix.
+All parameters are frozen; only the selected rows of the input embedding (and
+the tied `lm_head`) receive gradients.
+`RestoreFrozenEmbeddingRowsCallback` restores the non-selected rows from a
+snapshot after each optimizer step, so weight decay decays only the selected
+rows instead of the whole vocabulary matrix.
 
-`barca-0.8b-base` is Qwen3.5 with 22 added protein tokens at ids
-**248077–248098**: the 20 ζ-prefixed amino acids (`ζA`…`ζY`) plus
-`<protein>` and `</protein>`.
+---
 
-### Checkpoint policy
+## GRPO
+
+`scripts/training/train_grpo.py` continues an SFT design checkpoint with TRL's
+`GRPOTrainer` and a LoRA adapter. Completions are scored by
+`src/barca/rl/rewards.py`:
+
+| Reward | What it measures |
+|---|---|
+| `format` | closed `</protein>`, parseable, canonical AAs, 30–512 aa |
+| `ref_f1` | 5-mer F1 against the reference sequence |
+| `foldability` | low-cycle ESMFold2 pLDDT from a local FastAPI service |
+| `diversity` | unique 5-mer fraction (penalizes repeats/collapse) |
+| `length` | closeness to reference length or the 30–512 aa target |
+
+Start the foldability service on a GPU host, then run GRPO:
+
+```bash
+python scripts/serving/esmfold2_service.py --host 127.0.0.1 --port 8010
+PYTHONPATH=src python scripts/training/train_grpo.py --config configs/grpo.yaml
+```
+
+`docs/grpo_recipe.md` documents the prompt selection, reward weights, anti-reward-hacking
+checks, evaluation recipe, and acceptance criteria. The foldability service is
+new and experimental; run the smoke test before a long job.
+
+---
+
+## Generation and folding
+
+```bash
+# Sample from one or more checkpoints
+python scripts/generation/generate_fasta.py outputs/barca-0.8b-full-ft/checkpoint-* \
+    --num-samples 10 --output proteins.fasta
+
+# Instruction -> designed sequence + reference, for fold comparison
+python scripts/generation/gen_best_sft_design.py \
+    outputs/barca-0.8b-sft-design/checkpoint-3000 designs.json
+
+# Keep plausible sequences, then fold
+python scripts/generation/filter_proteins.py proteins.fasta filtered.fasta --max-len 400
+python scripts/generation/fold_plddt.py filtered.fasta --out-dir pdbs
+```
+
+`configs/generation/*.yaml` holds sampling settings (temperature, top-p, top-k,
+repetition penalty). They are **not** valid `--config` inputs. When comparing
+checkpoints, pass settings explicitly: the scripts' defaults differ. The
+config used for the showcase is
+[`configs/generation/sft_design_best.yaml`](configs/generation/sft_design_best.yaml)
+(T 0.8, top-p 0.95, top-k 50, repetition penalty 1.2).
+
+Caveats:
+
+- `filter_proteins.py` does **not** detect tandem repeats. Low-complexity
+  LRR/TPR/ankyrin-like proteins can pass the filters and still score a high
+  pLDDT — check for repeats before calling a structure a candidate.
+- Folding with the public ColabFold MSA server can sit `PENDING` for many
+  minutes; rerunning in the same directory resumes.
+- One long FASTA row can dominate a batch; filter by length first.
+
+---
+
+## Evaluation
+
+```bash
+# Next-token loss / perplexity overall and per group from a CSV or save_to_disk dataset
+python scripts/eval/ntp/evaluate.py --help
+python scripts/eval/ntp/download_dataset.py --help
+
+# Small text-capability check
+python scripts/eval/gsm8k_cot_pot.py --help
+
+# Pair GRPO and SFT designs by prompt/candidate and compare ColabFold pLDDT/pTM
+python scripts/eval/compare_grpo_sft_folds.py \
+    --sft-json sft.json --grpo-json grpo.json \
+    --sft-folds sft_colabfold/ --grpo-folds grpo_colabfold/ \
+    --reuse-identical --output comparison.json
+```
+
+---
+
+## Checkpoint policy
 
 `checkpointing.top_k: 3` keeps the three checkpoints with the lowest
-`eval_loss` (set `metric` / `greater_is_better` to change this). Evaluation and
-saving are forced to the same cadence (`save_steps == eval_steps`) so a saved
-checkpoint always matches the metric recorded with it. The Trainer's own
-`save_total_limit` is disabled — `TopKCheckpointCallback` owns retention.
-
-Checkpoints are kept **locally only**; W&B receives metrics, not model
-artifacts. The best checkpoint is reloaded at the end of training and written
-to `run.output_dir` as the final model.
+`eval_loss` (change `metric` / `greater_is_better` to alter this). Evaluation
+and saving are forced to the same cadence (`save_steps == eval_steps`), and the
+Trainer's own `save_total_limit` is disabled — `TopKCheckpointCallback` owns
+retention. The best checkpoint is copied to `run.output_dir` at the end of
+training. Checkpoints stay local; W&B receives metrics and config only.
 
 ---
 
 ## W&B
 
-Set credentials before launching:
-
 ```bash
 export WANDB_API_KEY=...
-# Optional: export WANDB_ENTITY=your-team
+export WANDB_ENTITY=your-team   # optional
 ```
 
-`wandb.project`, `wandb.entity`, `wandb.tags` and `wandb.notes` come from the
-recipe. Every run is tagged with a short config fingerprint (`cfg-XXXXXXXX`) for
-traceability, and the resolved YAML is saved to `output_dir/config.yaml` and
-uploaded to the run. Pass `--no_wandb` (or `wandb.enabled: false`) to disable.
-
----
-
-## Remote server notes
-
-- The env is assumed to contain all runtime libraries; no dependency install is
-  required, but `pip install -e .` is the cleanest way to expose the `barca`
-  package.
-- If the training interpreter is not the default `python`, point the launch
-  scripts at it with `PYTHON=/path/to/python` (the GPU server uses
-  `/opt/miniconda3/bin/python`).
-- Set `model.attn_implementation` to `flash_attention_2` only if flash-attn is
-  installed; otherwise use `sdpa` or `null`.
-- Cross-node/multi-GPU launches use `torchrun` (see `scripts/training/train.sh`).
-- Adjust `data.num_proc`, `dataloader_num_workers` and
-  `per_device_train_batch_size` to the server's CPU/RAM/VRAM budget.
+`wandb.project`, `wandb.entity`, `wandb.tags`, and `wandb.notes` come from the
+recipe. Each run is tagged with a short config fingerprint (`cfg-XXXXXXXX`); the
+resolved YAML is written to `output_dir/config.yaml` and uploaded. Pass
+`--no_wandb` (or set `wandb.enabled: false`) to disable logging.
 
 ---
 
 ## Development
 
 ```bash
-pytest -q
+pytest -q          # 42 tests
 ruff check .
 ```
 
-`tests/test_config.py` only needs PyYAML; `tests/test_callbacks.py` also needs
-`transformers`.
+`tests/test_config.py` only needs PyYAML. `tests/test_callbacks.py`,
+`tests/test_data.py`, and the GRPO tests also need transformers/datasets. The
+model tests need torch. Some exploratory `scripts/generation/sweep*_sft_design.py`
+and `scripts/eval/gsm8k_cot_pot.py` scripts are intentionally terse and are not
+ruff-clean; the library, trainer, RL, serving, and test code are.
+
+---
+
+## Notes
+
+- The model is Qwen3.5-based (the “Llama-style” description in older revisions
+  of this README is legacy). `model.attn_implementation` should be
+  `flash_attention_2` only when flash-attn is installed; otherwise use `sdpa`
+  or `null`.
+- The GB10 server may also run long LoRA jobs. Any GPU/eval job of yours slows
+  those down; coordinate before launching.
+- Folding outputs live under the gitignored `data/gen/`; the curated figures in
+  `docs/showcase/` are the small, committed subset.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
